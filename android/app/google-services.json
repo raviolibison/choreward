@@ -50,6 +50,14 @@
       },
       "oauth_client": [
         {
+          "client_id": "1028098506758-57unoffpdcbfqa3nv10s0gm0o1admitk.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.raviolistudios.choreward",
+            "certificate_hash": "e944033fa2e22bf1ff301348fe54cb29e5131863"
+          }
+        },
+        {
           "client_id": "1028098506758-0hbamefr4puhji4lpar2p5da675vefpt.apps.googleusercontent.com",
           "client_type": 3
         }

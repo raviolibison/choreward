@@ -4,6 +4,8 @@ import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
 import 'login_screen.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'family_service.dart';
+import 'setup_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -24,17 +26,20 @@ class MyApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
         useMaterial3: true,
       ),
-      home: StreamBuilder(
-  stream: FirebaseAuth.instance.authStateChanges(),
-  builder: (context, snapshot) {
-    if (snapshot.connectionState == ConnectionState.waiting) {
-      return const CircularProgressIndicator();
-    }
-    if (snapshot.hasData) {
-      return const HomeScreen();
-    }
-    return const LoginScreen();
-  },
+      
+  home: StreamBuilder(
+    stream: FirebaseAuth.instance.authStateChanges(),
+    builder: (context, snapshot) {
+      if (snapshot.connectionState == ConnectionState.waiting) {
+        return const Scaffold(
+          body: Center(child: CircularProgressIndicator()),
+        );
+      }
+      if (snapshot.hasData) {
+        return const RoleRouter();
+      }
+      return const LoginScreen();
+    },
 ),
     );
   }
@@ -111,6 +116,29 @@ class ChildScreen extends StatelessWidget {
       body: const Center(
         child: Text('Child view coming soon!'),
       ),
+    );
+  }
+}
+
+class RoleRouter extends StatelessWidget {
+  const RoleRouter({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder(
+      future: FamilyService().getUserData(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+        final data = snapshot.data;
+        if (data == null || data['householdIds'] == null) {
+          return const SetupScreen();
+        }
+        return const HomeScreen();
+      },
     );
   }
 }
