@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'family_service.dart';
+import 'main.dart';
 
 class SetupScreen extends StatefulWidget {
   const SetupScreen({super.key});
@@ -26,37 +27,40 @@ class _SetupScreenState extends State<SetupScreen> {
     });
     try {
       final result = await _familyService.createHousehold(_nameController.text.trim());
-      if (mounted) {
-        showDialog(
-          context: context,
-          barrierDismissible: false,
-          builder: (context) => AlertDialog(
-            title: const Text('Household Created!'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('Share these codes with your family:'),
-                const SizedBox(height: 16),
-                const Text('Child invite code:', style: TextStyle(fontWeight: FontWeight.bold)),
-                Text(result['childInviteCode'], style: const TextStyle(fontSize: 24, letterSpacing: 4)),
-                const SizedBox(height: 12),
-                const Text('Co-parent invite code:', style: TextStyle(fontWeight: FontWeight.bold)),
-                Text(result['householdInviteCode'], style: const TextStyle(fontSize: 24, letterSpacing: 4)),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  Navigator.pop(context);
-                  Navigator.pushReplacementNamed(context, '/home');
-                },
-                child: const Text('Continue'),
-              ),
+      if (!mounted) return;
+      final context = this.context;
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          title: const Text('Household Created!'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Share these codes with your family:'),
+              const SizedBox(height: 16),
+              const Text('Child invite code:', style: TextStyle(fontWeight: FontWeight.bold)),
+              Text(result['childInviteCode'], style: const TextStyle(fontSize: 24, letterSpacing: 4)),
+              const SizedBox(height: 12),
+              const Text('Co-parent invite code:', style: TextStyle(fontWeight: FontWeight.bold)),
+              Text(result['householdInviteCode'], style: const TextStyle(fontSize: 24, letterSpacing: 4)),
             ],
           ),
-        );
-      }
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(builder: (context) => const RoleRouter()),
+                );
+              },
+              child: const Text('Continue'),
+            ),
+          ],
+        ),
+      );
     } catch (e) {
       setState(() => _errorMessage = e.toString());
     }
@@ -74,7 +78,7 @@ class _SetupScreenState extends State<SetupScreen> {
   });
   try {
     await _familyService.joinWithCode(_inviteController.text.trim());
-    if (mounted) Navigator.pushReplacementNamed(context, '/home');
+    if (mounted) Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const RoleRouter()));
   } catch (e) {
     setState(() => _errorMessage = e.toString());
   }
@@ -84,6 +88,7 @@ class _SetupScreenState extends State<SetupScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Welcome to Choreward')),
+      automaticallyImplyLeading: false,
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24.0),
         child: Column(

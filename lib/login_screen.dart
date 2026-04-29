@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'register_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -52,21 +53,7 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _isLoading = false);
   }
 
-  Future<void> _registerWithEmail() async {
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
-    try {
-      await FirebaseAuth.instance.createUserWithEmailAndPassword(
-        email: _emailController.text.trim(),
-        password: _passwordController.text.trim(),
-      );
-    } on FirebaseAuthException catch (e) {
-      setState(() => _errorMessage = e.message);
-    }
-    setState(() => _isLoading = false);
-  }
+ 
 
   @override
   Widget build(BuildContext context) {
@@ -111,8 +98,13 @@ class _LoginScreenState extends State<LoginScreen> {
                 child: const Text('Sign In'),
               ),
               TextButton(
-                onPressed: _registerWithEmail,
-                child: const Text('Create Account'),
+                onPressed: () {
+                  Navigator.pushReplacement(
+                    context,
+                    MaterialPageRoute(builder: (context) => const RegisterScreen()),
+                  );
+                },
+                child: const Text('Don\'t have an account? Register'),
               ),
               const Divider(),
               ElevatedButton.icon(

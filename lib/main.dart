@@ -6,6 +6,10 @@ import 'login_screen.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'family_service.dart';
 import 'setup_screen.dart';
+import 'parent_screen.dart';
+import 'child_screen.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -92,52 +96,38 @@ class HomeScreen extends StatelessWidget {
   }
 }
 
-class ParentScreen extends StatelessWidget {
-  const ParentScreen({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Parent Dashboard')),
-      body: const Center(
-        child: Text('Parent view coming soon!'),
-      ),
-    );
-  }
-}
-
-class ChildScreen extends StatelessWidget {
-  const ChildScreen({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Child Dashboard')),
-      body: const Center(
-        child: Text('Child view coming soon!'),
-      ),
-    );
-  }
-}
 
 class RoleRouter extends StatelessWidget {
   const RoleRouter({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder(
-      future: FamilyService().getUserData(),
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return const LoginScreen();
+
+    return StreamBuilder<DocumentSnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .snapshots(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(
             body: Center(child: CircularProgressIndicator()),
           );
         }
-        final data = snapshot.data;
+
+        final data = snapshot.data?.data() as Map<String, dynamic>?;
+
         if (data == null || data['householdIds'] == null) {
           return const SetupScreen();
         }
-        return const HomeScreen();
+
+        if (data['role'] == 'parent') {
+          return const ParentScreen();
+        }
+
+        return const ChildScreen();
       },
     );
   }
