@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'family_service.dart';
-import 'main.dart';
 
 class SetupScreen extends StatefulWidget {
   const SetupScreen({super.key});
@@ -49,13 +48,7 @@ class _SetupScreenState extends State<SetupScreen> {
           ),
           actions: [
             TextButton(
-              onPressed: () {
-                Navigator.pop(context);
-                Navigator.pushReplacement(
-                  context,
-                  MaterialPageRoute(builder: (context) => const RoleRouter()),
-                );
-              },
+              onPressed: () => Navigator.pop(context),
               child: const Text('Continue'),
             ),
           ],
@@ -78,11 +71,12 @@ class _SetupScreenState extends State<SetupScreen> {
   });
   try {
     await _familyService.joinWithCode(_inviteController.text.trim());
-    if (mounted) Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const RoleRouter()));
+    // No manual navigation needed — RoleRouter's StreamBuilder detects the
+    // householdIds update and switches to ParentScreen/ChildScreen automatically.
   } catch (e) {
-    setState(() => _errorMessage = e.toString());
+    if (mounted) setState(() => _errorMessage = e.toString());
   }
-  setState(() => _isLoading = false);
+  if (mounted) setState(() => _isLoading = false);
 }
   @override
   Widget build(BuildContext context) {

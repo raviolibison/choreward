@@ -19,31 +19,32 @@ class RewardService {
 
   Future<void> redeemReward(String householdId, String rewardId, String rewardTitle, int pointCost) async {
     final user = _auth.currentUser!;
-    final userDoc = await _db.collection('users').doc(user.uid).get();
-    final currentPoints = userDoc.data()?['points'] ?? 0;
-
-    if (currentPoints < pointCost) {
-      throw Exception('Not enough points!');
-    }
-
-    // Deduct points
-    await _db.collection('users').doc(user.uid).update({
-      'points': FieldValue.increment(-pointCost),
-    });
-
-    // Log the redemption
-    await _db
+    final userRef = _db.collection('users').doc(user.uid);
+    final redemptionRef = _db
         .collection('households')
         .doc(householdId)
         .collection('redemptions')
-        .add({
-      'rewardId': rewardId,
-      'rewardTitle': rewardTitle,
-      'pointCost': pointCost,
-      'redeemedBy': user.uid,
-      'redeemedByName': user.displayName ?? 'Child',
-      'status': 'pending',
-      'redeemedAt': FieldValue.serverTimestamp(),
+        .doc();
+
+    await _db.runTransaction((transaction) async {
+      final userDoc = await transaction.get(userRef);
+      final currentPoints = userDoc.data()?['points'] as int? ?? 0;
+
+      if (currentPoints < pointCost) {
+        throw Exception('Not enough points!');
+      }
+
+      transaction.update(userRef, {'points': FieldValue.increment(-pointCost)});
+
+      transaction.set(redemptionRef, {
+        'rewardId': rewardId,
+        'rewardTitle': rewardTitle,
+        'pointCost': pointCost,
+        'redeemedBy': user.uid,
+        'redeemedByName': user.displayName ?? 'Child',
+        'status': 'pending',
+        'redeemedAt': FieldValue.serverTimestamp(),
+      });
     });
   }
 

@@ -58,10 +58,21 @@ class FamilyService {
 
     final userDoc = await _db.collection('users').doc(user.uid).get();
 
+    // Write household membership BEFORE updating the user doc. The user doc
+    // update triggers RoleRouter's stream; by the time it fires, childIds must
+    // already contain this uid or the Firestore rules will deny subcollection reads.
+    await _db.collection('households').doc(householdId).update({
+      'childIds': FieldValue.arrayUnion([user.uid]),
+    });
+
     if (userDoc.exists) {
-      await _db.collection('users').doc(user.uid).update({
+      final updates = <String, dynamic>{
         'householdIds': FieldValue.arrayUnion([householdId]),
-      });
+      };
+      if (userDoc.data()?['role'] == null) {
+        updates['role'] = 'child';
+      }
+      await _db.collection('users').doc(user.uid).update(updates);
     } else {
       await _db.collection('users').doc(user.uid).set({
         'name': user.displayName ?? 'Child',
@@ -71,10 +82,6 @@ class FamilyService {
         'points': 0,
       });
     }
-
-    await _db.collection('households').doc(householdId).update({
-      'childIds': FieldValue.arrayUnion([user.uid]),
-    });
   }
 
   Future<void> joinHouseholdAsParent(String inviteCode) async {
@@ -94,9 +101,17 @@ class FamilyService {
 
     final userDoc = await _db.collection('users').doc(user.uid).get();
 
+    // Write household membership BEFORE updating the user doc — same ordering
+    // constraint as joinHouseholdAsChild: rules must see parentIds updated
+    // before the user doc change triggers RoleRouter's stream.
+    await _db.collection('households').doc(householdId).update({
+      'parentIds': FieldValue.arrayUnion([user.uid]),
+    });
+
     if (userDoc.exists) {
       await _db.collection('users').doc(user.uid).update({
         'householdIds': FieldValue.arrayUnion([householdId]),
+        'role': 'parent',
       });
     } else {
       await _db.collection('users').doc(user.uid).set({
@@ -106,10 +121,6 @@ class FamilyService {
         'householdIds': [householdId],
       });
     }
-
-    await _db.collection('households').doc(householdId).update({
-      'parentIds': FieldValue.arrayUnion([user.uid]),
-    });
   }
 
   Future<void> joinWithCode(String inviteCode) async {

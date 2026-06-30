@@ -1,0 +1,76 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAuth() {
+      return request.auth != null;
+    }
+
+    function isHouseholdMember(householdId) {
+      let h = get(/databases/$(database)/documents/households/$(householdId)).data;
+      return request.auth.uid in h.parentIds ||
+             request.auth.uid in h.get('childIds', []);
+    }
+
+    function isHouseholdParent(householdId) {
+      return request.auth.uid in
+             get(/databases/$(database)/documents/households/$(householdId)).data.parentIds;
+    }
+
+    // Users can fully manage their own document.
+    // Others can only change the `points` field (parents awarding/adjusting points).
+    // Self can decrement points (reward redemption transaction) but not inflate them —
+    // enforced by RewardService running a server-side transaction.
+    match /users/{userId} {
+      allow read: if isAuth();
+      allow create, delete: if isAuth() && request.auth.uid == userId;
+      allow update: if isAuth() && (
+        request.auth.uid == userId ||
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['points'])
+      );
+    }
+
+    match /households/{householdId} {
+      // Broad read needed so invite-code lookups work before membership is established.
+      allow read: if isAuth();
+      allow create: if isAuth();
+      allow delete: if isAuth() && isHouseholdParent(householdId);
+      allow update: if isAuth() && (
+        // Existing parents can change anything.
+        isHouseholdParent(householdId) ||
+        // Any authenticated user may add only their own UID to parentIds (co-parent join).
+        // They cannot remove existing members or touch any other field.
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['parentIds']) &&
+         request.resource.data.parentIds.hasAll(resource.data.parentIds) &&
+         request.resource.data.parentIds.removeAll(resource.data.parentIds).hasOnly([request.auth.uid])) ||
+        // Same self-service rule for childIds (child join).
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['childIds']) &&
+         request.resource.data.get('childIds', []).hasAll(resource.data.get('childIds', [])) &&
+         request.resource.data.get('childIds', []).removeAll(resource.data.get('childIds', [])).hasOnly([request.auth.uid]))
+      );
+
+      match /chores/{choreId} {
+        allow read: if isAuth() && isHouseholdMember(householdId);
+        allow create, delete: if isAuth() && isHouseholdParent(householdId);
+        allow update: if isAuth() && isHouseholdMember(householdId) && (
+          isHouseholdParent(householdId) ||
+          // Children may only write the proof-submission fields.
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['status', 'proofUrl', 'submittedBy', 'submittedByName', 'submittedAt'])
+        );
+      }
+
+      match /rewards/{rewardId} {
+        allow read: if isAuth() && isHouseholdMember(householdId);
+        allow write: if isAuth() && isHouseholdParent(householdId);
+      }
+
+      match /redemptions/{redemptionId} {
+        allow read: if isAuth() && isHouseholdMember(householdId);
+        allow create: if isAuth() && isHouseholdMember(householdId);
+        allow update: if isAuth() && isHouseholdParent(householdId);
+        allow delete: if false;
+      }
+    }
+  }
+}

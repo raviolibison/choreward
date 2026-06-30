@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'family_service.dart';
+import 'messaging_service.dart';
 import 'reward_service.dart';
 
 class ParentScreen extends StatefulWidget {
@@ -332,42 +333,88 @@ class _ParentScreenState extends State<ParentScreen> {
             final chore = chores[index].data() as Map<String, dynamic>;
             final choreId = chores[index].id;
             final status = chore['status'] as String? ?? 'pending';
-            return Card(
-              margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              child: ListTile(
-                leading: Icon(
-                  status == 'pending'
-                      ? Icons.radio_button_unchecked
-                      : status == 'submitted'
-                          ? Icons.hourglass_empty
-                          : status == 'approved'
-                              ? Icons.check_circle
-                              : Icons.cancel,
-                  color: status == 'pending'
-                      ? Colors.grey
-                      : status == 'submitted'
-                          ? Colors.orange
-                          : status == 'approved'
-                              ? Colors.green
-                              : Colors.red,
+            return Dismissible(
+              key: Key(choreId),
+              direction: DismissDirection.endToStart,
+              background: Container(
+                margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.red,
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                title: Text(chore['title']),
-                subtitle: Text(
-                  status == 'pending'
-                      ? 'Waiting for child to complete'
-                      : status == 'submitted'
-                          ? 'Proof submitted — tap to review'
-                          : status == 'approved'
-                              ? 'Approved ✓'
-                              : 'Rejected',
+                alignment: Alignment.centerRight,
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: const Icon(Icons.delete, color: Colors.white),
+              ),
+              confirmDismiss: (_) async {
+                if (status == 'submitted') {
+                  return await showDialog<bool>(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      title: const Text('Delete Chore?'),
+                      content: const Text(
+                          'This chore has pending proof. Deleting it will discard the submission.'),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx, false),
+                          child: const Text('Cancel'),
+                        ),
+                        ElevatedButton(
+                          onPressed: () => Navigator.pop(ctx, true),
+                          style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.red,
+                              foregroundColor: Colors.white),
+                          child: const Text('Delete'),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+                return true;
+              },
+              onDismissed: (_) => _db
+                  .collection('households')
+                  .doc(householdId)
+                  .collection('chores')
+                  .doc(choreId)
+                  .delete(),
+              child: Card(
+                margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                child: ListTile(
+                  leading: Icon(
+                    status == 'pending'
+                        ? Icons.radio_button_unchecked
+                        : status == 'submitted'
+                            ? Icons.hourglass_empty
+                            : status == 'approved'
+                                ? Icons.check_circle
+                                : Icons.cancel,
+                    color: status == 'pending'
+                        ? Colors.grey
+                        : status == 'submitted'
+                            ? Colors.orange
+                            : status == 'approved'
+                                ? Colors.green
+                                : Colors.red,
+                  ),
+                  title: Text(chore['title']),
+                  subtitle: Text(
+                    status == 'pending'
+                        ? 'Waiting for child to complete'
+                        : status == 'submitted'
+                            ? 'Proof submitted — tap to review'
+                            : status == 'approved'
+                                ? 'Approved ✓'
+                                : 'Rejected',
+                  ),
+                  trailing: Text(
+                    '${chore['points']} pts',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  onTap: status == 'submitted'
+                      ? () => _reviewProof(context, choreId, chore)
+                      : null,
                 ),
-                trailing: Text(
-                  '${chore['points']} pts',
-                  style: const TextStyle(fontWeight: FontWeight.bold),
-                ),
-                onTap: status == 'submitted'
-                    ? () => _reviewProof(context, choreId, chore)
-                    : null,
               ),
             );
           },
@@ -400,14 +447,38 @@ class _ParentScreenState extends State<ParentScreen> {
                 itemCount: rewards.length,
                 itemBuilder: (context, index) {
                   final reward = rewards[index].data() as Map<String, dynamic>;
-                  return Card(
-                    margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    child: ListTile(
-                      leading: const Icon(Icons.star, color: Colors.amber),
-                      title: Text(reward['title']),
-                      trailing: Text(
-                        '${reward['pointCost']} pts',
-                        style: const TextStyle(fontWeight: FontWeight.bold),
+                  final rewardId = rewards[index].id;
+                  return Dismissible(
+                    key: Key(rewardId),
+                    direction: DismissDirection.endToStart,
+                    background: Container(
+                      margin: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.red,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      alignment: Alignment.centerRight,
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: const Icon(Icons.delete, color: Colors.white),
+                    ),
+                    onDismissed: (_) => _db
+                        .collection('households')
+                        .doc(householdId)
+                        .collection('rewards')
+                        .doc(rewardId)
+                        .delete(),
+                    child: Card(
+                      margin: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 6),
+                      child: ListTile(
+                        leading:
+                            const Icon(Icons.star, color: Colors.amber),
+                        title: Text(reward['title']),
+                        trailing: Text(
+                          '${reward['pointCost']} pts',
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
                       ),
                     ),
                   );
@@ -492,6 +563,9 @@ class _ParentScreenState extends State<ParentScreen> {
             onPressed: () async {
               await FirebaseAuth.instance.signOut();
               await GoogleSignIn().signOut();
+              if (mounted) {
+                Navigator.of(context).popUntil((route) => route.isFirst);
+              }
             },
           ),
         ],

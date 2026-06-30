@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'main.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -46,11 +45,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
         password: _passwordController.text.trim(),
       );
       await credential.user?.updateDisplayName(_nameController.text.trim());
+      // Pop back to LoginScreen (home route); MyApp's authStateChanges
+      // StreamBuilder has already switched it to RoleRouter → SetupScreen.
       if (mounted) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => const RoleRouter()),
-        );
+        Navigator.of(context).pop();
       }
     } on FirebaseAuthException catch (e) {
       setState(() => _errorMessage = e.message);

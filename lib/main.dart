@@ -62,6 +62,12 @@ class RoleRouter extends StatelessWidget {
           .doc(user.uid)
           .snapshots(),
       builder: (context, snapshot) {
+        // Guard against post-sign-out stream events arriving before the outer
+        // authStateChanges StreamBuilder re-evaluates.
+        if (FirebaseAuth.instance.currentUser == null) {
+          return const LoginScreen();
+        }
+
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(
             body: Center(child: CircularProgressIndicator()),
