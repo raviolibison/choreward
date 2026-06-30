@@ -3,8 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
 import 'login_screen.dart';
-import 'package:google_sign_in/google_sign_in.dart';
-import 'family_service.dart';
 import 'setup_screen.dart';
 import 'parent_screen.dart';
 import 'child_screen.dart';
@@ -45,53 +43,6 @@ class MyApp extends StatelessWidget {
       return const LoginScreen();
     },
 ),
-    );
-  }
-}
-
-class HomeScreen extends StatelessWidget {
-  const HomeScreen({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Chore App'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.logout),
-            onPressed: () async {
-              await FirebaseAuth.instance.signOut();
-              await GoogleSignIn().signOut();
-            },
-          ),
-        ],
-      ),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            ElevatedButton(
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => const ParentScreen()),
-                );
-              },
-              child: const Text('I am a Parent'),
-            ),
-            const SizedBox(height: 20),
-            ElevatedButton(
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => const ChildScreen()),
-                );
-              },
-              child: const Text('I am a Child'),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }
