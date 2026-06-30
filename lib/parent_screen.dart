@@ -27,6 +27,7 @@ class _ParentScreenState extends State<ParentScreen> {
   void initState() {
     super.initState();
     _loadData();
+    MessagingService.initialize();
   }
 
   Future<void> _loadData() async {

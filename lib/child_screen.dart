@@ -5,6 +5,7 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'dart:io';
+import 'messaging_service.dart';
 import 'reward_service.dart';
 
 class ChildScreen extends StatefulWidget {
@@ -20,6 +21,12 @@ class _ChildScreenState extends State<ChildScreen> {
   final _storage = FirebaseStorage.instance;
   final _auth = FirebaseAuth.instance;
   int _currentTab = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    MessagingService.initialize();
+  }
 
   Future<void> _submitProof(
       String choreId, String choreTitle, String householdId) async {
