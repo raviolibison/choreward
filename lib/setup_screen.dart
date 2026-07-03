@@ -1,6 +1,45 @@
 import 'package:flutter/material.dart';
 import 'family_service.dart';
 
+// Shown when a free household hits its member limit
+void showUpgradeDialog(BuildContext context, String limitedResource) {
+  showDialog(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Your family is growing!'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            limitedResource == 'children'
+                ? 'This household has reached the free plan limit of 3 children.'
+                : 'This household has reached the free plan limit of 2 parents.',
+          ),
+          const SizedBox(height: 16),
+          const Text('Free plan includes:', style: TextStyle(fontWeight: FontWeight.bold)),
+          const SizedBox(height: 4),
+          const Text('• Up to 2 parents\n• Up to 3 children\n• Chores, rewards & photo proof'),
+          const SizedBox(height: 12),
+          const Text('Premium unlocks:', style: TextStyle(fontWeight: FontWeight.bold)),
+          const SizedBox(height: 4),
+          const Text('• Unlimited family members\n• Assign chores to specific children\n• More features coming soon'),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Maybe later'),
+        ),
+        ElevatedButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Upgrade to Premium'),
+        ),
+      ],
+    ),
+  );
+}
+
 class SetupScreen extends StatefulWidget {
   const SetupScreen({super.key});
 
@@ -73,6 +112,12 @@ class _SetupScreenState extends State<SetupScreen> {
     await _familyService.joinWithCode(_inviteController.text.trim());
     // No manual navigation needed — RoleRouter's StreamBuilder detects the
     // householdIds update and switches to ParentScreen/ChildScreen automatically.
+  } on PremiumLimitException catch (e) {
+    if (mounted) {
+      setState(() => _isLoading = false);
+      showUpgradeDialog(context, e.message);
+    }
+    return;
   } catch (e) {
     if (mounted) setState(() => _errorMessage = e.toString());
   }

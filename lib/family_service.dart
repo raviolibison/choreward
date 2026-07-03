@@ -2,6 +2,16 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:math';
 
+class PremiumLimitException implements Exception {
+  final String message;
+  const PremiumLimitException(this.message);
+  @override
+  String toString() => message;
+}
+
+const _maxFreeParents = 2;
+const _maxFreeChildren = 3;
+
 class FamilyService {
   final _db = FirebaseFirestore.instance;
   final _auth = FirebaseAuth.instance;
@@ -20,10 +30,12 @@ class FamilyService {
 
     final householdRef = await _db.collection('households').add({
       'name': familyName,
-      'householdInviteCode': householdInviteCode, // for adding co-parents
-      'childInviteCode': childInviteCode,          // for linking a child from another household
+      'householdInviteCode': householdInviteCode,
+      'childInviteCode': childInviteCode,
       'createdAt': FieldValue.serverTimestamp(),
       'parentIds': [user.uid],
+      'childIds': [],
+      'isPremium': false,
     });
 
     // Create the user document
@@ -55,12 +67,16 @@ class FamilyService {
 
     final household = query.docs.first;
     final householdId = household.id;
+    final householdData = household.data();
+
+    final isPremium = householdData['isPremium'] == true;
+    final currentChildren = List<String>.from(householdData['childIds'] ?? []);
+    if (!isPremium && currentChildren.length >= _maxFreeChildren) {
+      throw const PremiumLimitException('children');
+    }
 
     final userDoc = await _db.collection('users').doc(user.uid).get();
 
-    // Write household membership BEFORE updating the user doc. The user doc
-    // update triggers RoleRouter's stream; by the time it fires, childIds must
-    // already contain this uid or the Firestore rules will deny subcollection reads.
     await _db.collection('households').doc(householdId).update({
       'childIds': FieldValue.arrayUnion([user.uid]),
     });
@@ -98,12 +114,16 @@ class FamilyService {
 
     final household = query.docs.first;
     final householdId = household.id;
+    final householdData = household.data();
+
+    final isPremium = householdData['isPremium'] == true;
+    final currentParents = List<String>.from(householdData['parentIds'] ?? []);
+    if (!isPremium && currentParents.length >= _maxFreeParents) {
+      throw const PremiumLimitException('parents');
+    }
 
     final userDoc = await _db.collection('users').doc(user.uid).get();
 
-    // Write household membership BEFORE updating the user doc — same ordering
-    // constraint as joinHouseholdAsChild: rules must see parentIds updated
-    // before the user doc change triggers RoleRouter's stream.
     await _db.collection('households').doc(householdId).update({
       'parentIds': FieldValue.arrayUnion([user.uid]),
     });

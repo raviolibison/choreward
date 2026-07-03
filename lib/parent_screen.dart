@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'family_service.dart';
 import 'messaging_service.dart';
+import 'profile_screen.dart';
 import 'reward_service.dart';
 
 class ParentScreen extends StatefulWidget {
@@ -20,6 +21,7 @@ class _ParentScreenState extends State<ParentScreen> {
   final _db = FirebaseFirestore.instance;
   Map<String, dynamic>? _userData;
   Map<String, dynamic>? _householdData;
+  Map<String, String> _childNames = {};
   bool _isLoading = true;
   int _currentTab = 0;
 
@@ -35,9 +37,22 @@ class _ParentScreenState extends State<ParentScreen> {
     if (userData == null) return;
     final householdId = (userData['householdIds'] as List).first;
     final householdDoc = await _db.collection('households').doc(householdId).get();
+    final householdData = householdDoc.data();
+
+    final childIds = List<String>.from(householdData?['childIds'] ?? []);
+    final childDocs = await Future.wait(
+      childIds.map((uid) => _db.collection('users').doc(uid).get()),
+    );
+    final childNames = Map.fromEntries(
+      childDocs.where((d) => d.exists).map(
+            (d) => MapEntry(d.id, (d.data()?['name'] as String?) ?? 'Child'),
+          ),
+    );
+
     setState(() {
       _userData = userData;
-      _householdData = householdDoc.data();
+      _householdData = householdData;
+      _childNames = childNames;
       _isLoading = false;
     });
   }
@@ -104,6 +119,9 @@ class _ParentScreenState extends State<ParentScreen> {
     final titleController = TextEditingController();
     final descriptionController = TextEditingController();
     int points = 10;
+    String? assignedTo; // null = all children
+    final isPremium = _householdData?['isPremium'] == true;
+
     showDialog(
       context: context,
       builder: (context) => StatefulBuilder(
@@ -146,6 +164,47 @@ class _ParentScreenState extends State<ParentScreen> {
                   Text('$points'),
                 ],
               ),
+              const SizedBox(height: 12),
+              if (isPremium && _childNames.isNotEmpty)
+                DropdownButtonFormField<String?>(
+                  value: assignedTo,
+                  decoration: const InputDecoration(
+                    labelText: 'Assign to',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: [
+                    const DropdownMenuItem(
+                      value: null,
+                      child: Text('All children'),
+                    ),
+                    ..._childNames.entries.map(
+                      (e) => DropdownMenuItem(value: e.key, child: Text(e.value)),
+                    ),
+                  ],
+                  onChanged: (value) => setDialogState(() => assignedTo = value),
+                )
+              else
+                Opacity(
+                  opacity: isPremium ? 0.4 : 0.5,
+                  child: Row(
+                    children: [
+                      const Icon(Icons.lock, size: 16),
+                      const SizedBox(width: 6),
+                      Text(
+                        isPremium
+                            ? 'No children in household yet'
+                            : 'Assign to specific child',
+                        style: const TextStyle(fontSize: 13),
+                      ),
+                      const Spacer(),
+                      if (!isPremium)
+                        const Chip(
+                          label: Text('Premium', style: TextStyle(fontSize: 11)),
+                          padding: EdgeInsets.zero,
+                        ),
+                    ],
+                  ),
+                ),
             ],
           ),
           actions: [
@@ -165,6 +224,7 @@ class _ParentScreenState extends State<ParentScreen> {
                   'description': descriptionController.text.trim(),
                   'points': points,
                   'status': 'pending',
+                  'assignedTo': assignedTo,
                   'createdAt': FieldValue.serverTimestamp(),
                 });
                 if (mounted) Navigator.pop(context);
@@ -306,6 +366,19 @@ class _ParentScreenState extends State<ParentScreen> {
     );
   }
 
+  String _choreSubtitle(Map<String, dynamic> chore, String status) {
+    final assignedTo = chore['assignedTo'] as String?;
+    final prefix = assignedTo != null
+        ? 'For ${_childNames[assignedTo] ?? 'child'} — '
+        : '';
+    return switch (status) {
+      'submitted' => '${prefix}Proof submitted — tap to review',
+      'approved' => 'Approved ✓',
+      'rejected' => 'Rejected',
+      _ => '${prefix}Waiting to be completed',
+    };
+  }
+
   Widget _buildChoresTab(String householdId) {
     return StreamBuilder<QuerySnapshot>(
       stream: _db
@@ -399,15 +472,7 @@ class _ParentScreenState extends State<ParentScreen> {
                                 : Colors.red,
                   ),
                   title: Text(chore['title']),
-                  subtitle: Text(
-                    status == 'pending'
-                        ? 'Waiting for child to complete'
-                        : status == 'submitted'
-                            ? 'Proof submitted — tap to review'
-                            : status == 'approved'
-                                ? 'Approved ✓'
-                                : 'Rejected',
-                  ),
+                  subtitle: Text(_choreSubtitle(chore, status)),
                   trailing: Text(
                     '${chore['points']} pts',
                     style: const TextStyle(fontWeight: FontWeight.bold),
@@ -555,9 +620,12 @@ class _ParentScreenState extends State<ParentScreen> {
         title: Text(_householdData?['name'] ?? 'My Household'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.people),
-            onPressed: _showInviteCodes,
-            tooltip: 'Invite codes',
+            icon: const Icon(Icons.person_outline),
+            tooltip: 'Profile',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const ProfileScreen()),
+            ),
           ),
           IconButton(
             icon: const Icon(Icons.logout),

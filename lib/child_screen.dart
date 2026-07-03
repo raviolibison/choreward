@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'dart:io';
 import 'messaging_service.dart';
+import 'profile_screen.dart';
 import 'reward_service.dart';
 
 class ChildScreen extends StatefulWidget {
@@ -162,7 +163,11 @@ class _ChildScreenState extends State<ChildScreen> {
           return const Center(child: CircularProgressIndicator());
         }
 
-        final chores = snapshot.data?.docs ?? [];
+        final chores = (snapshot.data?.docs ?? []).where((doc) {
+          final assignedTo =
+              (doc.data() as Map<String, dynamic>)['assignedTo'] as String?;
+          return assignedTo == null || assignedTo == currentUserId;
+        }).toList();
 
         if (chores.isEmpty) {
           return const Center(
@@ -355,6 +360,14 @@ class _ChildScreenState extends State<ChildScreen> {
                     style: const TextStyle(
                         fontWeight: FontWeight.bold, fontSize: 16),
                   ),
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.person_outline),
+                tooltip: 'Profile',
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const ProfileScreen()),
                 ),
               ),
               IconButton(

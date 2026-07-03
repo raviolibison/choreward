@@ -38,15 +38,20 @@ service cloud.firestore {
       allow update: if isAuth() && (
         // Existing parents can change anything.
         isHouseholdParent(householdId) ||
-        // Any authenticated user may add only their own UID to parentIds (co-parent join).
-        // They cannot remove existing members or touch any other field.
+        // Self-service join: add only own UID to parentIds or childIds.
         (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['parentIds']) &&
          request.resource.data.parentIds.hasAll(resource.data.parentIds) &&
          request.resource.data.parentIds.removeAll(resource.data.parentIds).hasOnly([request.auth.uid])) ||
-        // Same self-service rule for childIds (child join).
         (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['childIds']) &&
          request.resource.data.get('childIds', []).hasAll(resource.data.get('childIds', [])) &&
-         request.resource.data.get('childIds', []).removeAll(resource.data.get('childIds', [])).hasOnly([request.auth.uid]))
+         request.resource.data.get('childIds', []).removeAll(resource.data.get('childIds', [])).hasOnly([request.auth.uid])) ||
+        // Self-service leave: remove only own UID from parentIds or childIds.
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['parentIds']) &&
+         resource.data.parentIds.hasAll(request.resource.data.parentIds) &&
+         resource.data.parentIds.removeAll(request.resource.data.parentIds).hasOnly([request.auth.uid])) ||
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['childIds']) &&
+         resource.data.get('childIds', []).hasAll(request.resource.data.get('childIds', [])) &&
+         resource.data.get('childIds', []).removeAll(request.resource.data.get('childIds', [])).hasOnly([request.auth.uid]))
       );
 
       match /chores/{choreId} {

@@ -76,7 +76,8 @@ class RoleRouter extends StatelessWidget {
 
         final data = snapshot.data?.data() as Map<String, dynamic>?;
 
-        if (data == null || data['householdIds'] == null) {
+        final householdIds = data?['householdIds'] as List?;
+        if (data == null || householdIds == null || householdIds.isEmpty) {
           return const SetupScreen();
         }
 

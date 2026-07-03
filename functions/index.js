@@ -1,4 +1,4 @@
-const { onDocumentUpdated } = require("firebase-functions/v2/firestore");
+const { onDocumentUpdated, onDocumentCreated } = require("firebase-functions/v2/firestore");
 const { initializeApp } = require("firebase-admin/app");
 const { getFirestore } = require("firebase-admin/firestore");
 const { getMessaging } = require("firebase-admin/messaging");
@@ -47,6 +47,27 @@ exports.onChoreUpdated = onDocumentUpdated(
   }
 );
 
+exports.onRedemptionCreated = onDocumentCreated(
+  "households/{householdId}/redemptions/{redemptionId}",
+  async (event) => {
+    const redemption = event.data.data();
+    if (!redemption) return;
+
+    const db = getFirestore();
+    const { householdId } = event.params;
+
+    const householdSnap = await db.collection("households").doc(householdId).get();
+    const parentIds = householdSnap.data()?.parentIds ?? [];
+    const tokens = await getTokens(db, parentIds);
+    if (tokens.length === 0) return;
+
+    await notify(tokens, {
+      title: "Reward redeemed! 🎁",
+      body: `${redemption.redeemedByName ?? "Your child"} wants "${redemption.rewardTitle}" (${redemption.pointCost} pts)`,
+    });
+  }
+);
+
 async function getTokens(db, userIds) {
   const results = await Promise.all(
     userIds.map((uid) => db.collection("users").doc(uid).get())
@@ -60,7 +81,10 @@ async function notify(tokens, notification) {
   const response = await getMessaging().sendEachForMulticast({
     tokens,
     notification,
-    android: { priority: "high" },
+    android: {
+      priority: "high",
+      notification: { channelId: "chore_alerts" },
+    },
     apns: { payload: { aps: { sound: "default" } } },
   });
 
