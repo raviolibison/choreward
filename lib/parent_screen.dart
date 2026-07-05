@@ -1,12 +1,24 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'family_service.dart';
 import 'messaging_service.dart';
 import 'profile_screen.dart';
 import 'reward_service.dart';
+
+const _forest = Color(0xFF2D6A4F);
+const _amber = Color(0xFFF59E0B);
+const _green = Color(0xFF059669);
+const _red = Color(0xFFDC2626);
+
+Color _statusColor(String status) => switch (status) {
+      'submitted' => const Color(0xFFD97706),
+      'approved'  => _green,
+      'rejected'  => _red,
+      _           => _forest,
+    };
 
 class ParentScreen extends StatefulWidget {
   const ParentScreen({super.key});
@@ -57,69 +69,16 @@ class _ParentScreenState extends State<ParentScreen> {
     });
   }
 
-  void _showInviteCodes() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Invite Codes'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Child invite code:', style: TextStyle(fontWeight: FontWeight.bold)),
-            Row(
-              children: [
-                Text(
-                  _householdData?['childInviteCode'] ?? '',
-                  style: const TextStyle(fontSize: 24, letterSpacing: 4),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.copy),
-                  onPressed: () {
-                    Clipboard.setData(ClipboardData(text: _householdData?['childInviteCode'] ?? ''));
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Copied!')),
-                    );
-                  },
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            const Text('Co-parent invite code:', style: TextStyle(fontWeight: FontWeight.bold)),
-            Row(
-              children: [
-                Text(
-                  _householdData?['householdInviteCode'] ?? '',
-                  style: const TextStyle(fontSize: 24, letterSpacing: 4),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.copy),
-                  onPressed: () {
-                    Clipboard.setData(ClipboardData(text: _householdData?['householdInviteCode'] ?? ''));
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Copied!')),
-                    );
-                  },
-                ),
-              ],
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
-    );
-  }
-
   void _showAddChoreDialog(String householdId) {
     final titleController = TextEditingController();
     final descriptionController = TextEditingController();
     int points = 10;
-    String? assignedTo; // null = all children
+    String? assignedTo;
+    bool isRecurring = false;
+    String recurrenceType = 'weekly';
+    List<int> recurrenceDays = [];
+    int monthlyDay = 1;
+    String? weeklyError;
     final isPremium = _householdData?['isPremium'] == true;
 
     showDialog(
@@ -127,85 +86,220 @@ class _ParentScreenState extends State<ParentScreen> {
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
           title: const Text('Add Chore'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: titleController,
-                decoration: const InputDecoration(
-                  labelText: 'Chore title',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: descriptionController,
-                decoration: const InputDecoration(
-                  labelText: 'Description (optional)',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  const Text('Points: '),
-                  Expanded(
-                    child: Slider(
-                      value: points.toDouble(),
-                      min: 5,
-                      max: 100,
-                      divisions: 19,
-                      label: points.toString(),
-                      onChanged: (value) {
-                        setDialogState(() => points = value.toInt());
-                      },
-                    ),
-                  ),
-                  Text('$points'),
-                ],
-              ),
-              const SizedBox(height: 12),
-              if (isPremium && _childNames.isNotEmpty)
-                DropdownButtonFormField<String?>(
-                  value: assignedTo,
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextField(
+                  controller: titleController,
                   decoration: const InputDecoration(
-                    labelText: 'Assign to',
+                    labelText: 'Chore title',
                     border: OutlineInputBorder(),
                   ),
-                  items: [
-                    const DropdownMenuItem(
-                      value: null,
-                      child: Text('All children'),
-                    ),
-                    ..._childNames.entries.map(
-                      (e) => DropdownMenuItem(value: e.key, child: Text(e.value)),
-                    ),
-                  ],
-                  onChanged: (value) => setDialogState(() => assignedTo = value),
-                )
-              else
-                Opacity(
-                  opacity: isPremium ? 0.4 : 0.5,
-                  child: Row(
-                    children: [
-                      const Icon(Icons.lock, size: 16),
-                      const SizedBox(width: 6),
-                      Text(
-                        isPremium
-                            ? 'No children in household yet'
-                            : 'Assign to specific child',
-                        style: const TextStyle(fontSize: 13),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: descriptionController,
+                  decoration: const InputDecoration(
+                    labelText: 'Description (optional)',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    const Text('Points: '),
+                    Expanded(
+                      child: Slider(
+                        value: points.toDouble(),
+                        min: 5,
+                        max: 100,
+                        divisions: 19,
+                        label: points.toString(),
+                        onChanged: (value) =>
+                            setDialogState(() => points = value.toInt()),
                       ),
-                      const Spacer(),
-                      if (!isPremium)
-                        const Chip(
+                    ),
+                    Text('$points'),
+                  ],
+                ),
+                const SizedBox(height: 4),
+
+                // Assign to child
+                if (isPremium && _childNames.isNotEmpty)
+                  DropdownButtonFormField<String?>(
+                    value: assignedTo,
+                    decoration: const InputDecoration(
+                      labelText: 'Assign to',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: [
+                      const DropdownMenuItem(value: null, child: Text('All children')),
+                      ..._childNames.entries.map(
+                        (e) => DropdownMenuItem(value: e.key, child: Text(e.value)),
+                      ),
+                    ],
+                    onChanged: (v) => setDialogState(() => assignedTo = v),
+                  )
+                else
+                  Opacity(
+                    opacity: isPremium ? 0.4 : 0.5,
+                    child: Row(
+                      children: [
+                        const Icon(Icons.lock, size: 16),
+                        const SizedBox(width: 6),
+                        Text(
+                          isPremium
+                              ? 'No children in household yet'
+                              : 'Assign to specific child',
+                          style: const TextStyle(fontSize: 13),
+                        ),
+                        const Spacer(),
+                        if (!isPremium)
+                          const Chip(
+                            label: Text('Premium', style: TextStyle(fontSize: 11)),
+                            padding: EdgeInsets.zero,
+                          ),
+                      ],
+                    ),
+                  ),
+
+                const SizedBox(height: 12),
+                const Divider(),
+                const SizedBox(height: 4),
+
+                // Recurrence — premium-gated
+                if (isPremium) ...[
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Repeating chore',
+                        style: TextStyle(fontSize: 14)),
+                    subtitle: isRecurring
+                        ? Text(
+                            _recurrenceSummary(recurrenceType, recurrenceDays, monthlyDay),
+                            style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+                          )
+                        : null,
+                    value: isRecurring,
+                    activeColor: _forest,
+                    onChanged: (v) => setDialogState(() {
+                      isRecurring = v;
+                      recurrenceDays = [];
+                      weeklyError = null;
+                    }),
+                  ),
+                  if (isRecurring) ...[
+                    const SizedBox(height: 4),
+                    SegmentedButton<String>(
+                      segments: const [
+                        ButtonSegment(value: 'daily',   label: Text('Daily',   style: TextStyle(fontSize: 12))),
+                        ButtonSegment(value: 'weekly',  label: Text('Weekly',  style: TextStyle(fontSize: 12))),
+                        ButtonSegment(value: 'monthly', label: Text('Monthly', style: TextStyle(fontSize: 12))),
+                      ],
+                      selected: {recurrenceType},
+                      onSelectionChanged: (s) => setDialogState(() {
+                        recurrenceType = s.first;
+                        recurrenceDays = [];
+                        weeklyError = null;
+                      }),
+                    ),
+                    const SizedBox(height: 12),
+                    if (recurrenceType == 'weekly') ...[
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceAround,
+                        children: List.generate(7, (i) {
+                          final selected = recurrenceDays.contains(i);
+                          return GestureDetector(
+                            onTap: () => setDialogState(() {
+                              weeklyError = null;
+                              if (selected) {
+                                recurrenceDays =
+                                    recurrenceDays.where((d) => d != i).toList();
+                              } else {
+                                recurrenceDays = [...recurrenceDays, i];
+                              }
+                            }),
+                            child: CircleAvatar(
+                              radius: 17,
+                              backgroundColor:
+                                  selected ? _forest : const Color(0xFFECFDF5),
+                              child: Text(
+                                ['S', 'M', 'T', 'W', 'T', 'F', 'S'][i],
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  color: selected ? Colors.white : const Color(0xFF6B7280),
+                                ),
+                              ),
+                            ),
+                          );
+                        }),
+                      ),
+                      if (weeklyError != null)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: Text(weeklyError!,
+                              style: const TextStyle(color: _red, fontSize: 12)),
+                        ),
+                    ] else if (recurrenceType == 'monthly') ...[
+                      Row(
+                        children: [
+                          const Text('Day of month:', style: TextStyle(fontSize: 13)),
+                          const Spacer(),
+                          IconButton(
+                            icon: const Icon(Icons.remove_circle_outline),
+                            color: _forest,
+                            onPressed: monthlyDay > 1
+                                ? () => setDialogState(() => monthlyDay--)
+                                : null,
+                            visualDensity: VisualDensity.compact,
+                            padding: EdgeInsets.zero,
+                          ),
+                          SizedBox(
+                            width: 32,
+                            child: Text(
+                              '$monthlyDay',
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.w800,
+                                color: _forest,
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.add_circle_outline),
+                            color: _forest,
+                            onPressed: monthlyDay < 28
+                                ? () => setDialogState(() => monthlyDay++)
+                                : null,
+                            visualDensity: VisualDensity.compact,
+                            padding: EdgeInsets.zero,
+                          ),
+                        ],
+                      ),
+                    ],
+                  ],
+                ] else ...[
+                  Opacity(
+                    opacity: 0.5,
+                    child: Row(
+                      children: const [
+                        Icon(Icons.repeat_rounded, size: 16),
+                        SizedBox(width: 6),
+                        Text('Repeating chores', style: TextStyle(fontSize: 13)),
+                        Spacer(),
+                        Chip(
                           label: Text('Premium', style: TextStyle(fontSize: 11)),
                           padding: EdgeInsets.zero,
                         ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-            ],
+                ],
+              ],
+            ),
           ),
           actions: [
             TextButton(
@@ -215,6 +309,12 @@ class _ParentScreenState extends State<ParentScreen> {
             ElevatedButton(
               onPressed: () async {
                 if (titleController.text.trim().isEmpty) return;
+                if (isRecurring &&
+                    recurrenceType == 'weekly' &&
+                    recurrenceDays.isEmpty) {
+                  setDialogState(() => weeklyError = 'Select at least one day');
+                  return;
+                }
                 await _db
                     .collection('households')
                     .doc(householdId)
@@ -225,6 +325,14 @@ class _ParentScreenState extends State<ParentScreen> {
                   'points': points,
                   'status': 'pending',
                   'assignedTo': assignedTo,
+                  'isRecurring': isRecurring,
+                  'recurrenceType': isRecurring ? recurrenceType : null,
+                  'recurrenceDays': isRecurring
+                      ? (recurrenceType == 'monthly'
+                          ? [monthlyDay]
+                          : List<int>.from(recurrenceDays))
+                      : null,
+                  'nextDueAt': null,
                   'createdAt': FieldValue.serverTimestamp(),
                 });
                 if (mounted) Navigator.pop(context);
@@ -342,7 +450,7 @@ class _ParentScreenState extends State<ParentScreen> {
                   .update({'status': 'rejected'});
               if (mounted) Navigator.pop(context);
             },
-            child: const Text('Reject', style: TextStyle(color: Colors.red)),
+            child: const Text('Reject', style: TextStyle(color: _red)),
           ),
           ElevatedButton(
             onPressed: () async {
@@ -368,14 +476,59 @@ class _ParentScreenState extends State<ParentScreen> {
 
   String _choreSubtitle(Map<String, dynamic> chore, String status) {
     final assignedTo = chore['assignedTo'] as String?;
-    final prefix = assignedTo != null
-        ? 'For ${_childNames[assignedTo] ?? 'child'} — '
-        : '';
+    final namePrefix = assignedTo != null ? 'For ${_childNames[assignedTo] ?? 'child'} — ' : '';
+    final isRecurring = chore['isRecurring'] == true;
+
+    final nextDueRaw = chore['nextDueAt'];
+    if (nextDueRaw != null && status == 'pending') {
+      final dueDate = (nextDueRaw as Timestamp).toDate();
+      final now = DateTime.now();
+      final todayStart = DateTime(now.year, now.month, now.day);
+      if (dueDate.isAfter(todayStart)) {
+        return 'Next due ${_formatDueDate(dueDate)}';
+      }
+    }
+
+    final recurringPrefix = isRecurring ? '↻ ' : '';
     return switch (status) {
-      'submitted' => '${prefix}Proof submitted — tap to review',
-      'approved' => 'Approved ✓',
-      'rejected' => 'Rejected',
-      _ => '${prefix}Waiting to be completed',
+      'submitted' => '${namePrefix}Tap to review proof',
+      'approved'  => 'Approved ✓',
+      'rejected'  => 'Rejected',
+      _           => '$recurringPrefix${namePrefix}Waiting for completion',
+    };
+  }
+
+  String _formatDueDate(DateTime date) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final tomorrow = today.add(const Duration(days: 1));
+    final dateOnly = DateTime(date.year, date.month, date.day);
+    if (dateOnly == today) return 'today';
+    if (dateOnly == tomorrow) return 'tomorrow';
+    const weekDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return '${weekDays[date.weekday - 1]} ${date.day} ${months[date.month - 1]}';
+  }
+
+  String _recurrenceSummary(String type, List<int> days, int monthlyDay) {
+    const weekDayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    return switch (type) {
+      'daily'   => 'Every day',
+      'weekly'  => days.isEmpty
+          ? 'Pick days below'
+          : 'Every ${days.map((d) => weekDayNames[d]).join(', ')}',
+      'monthly' => 'On the ${_ordinal(monthlyDay)} of each month',
+      _         => '',
+    };
+  }
+
+  String _ordinal(int n) {
+    if (n >= 11 && n <= 13) return '${n}th';
+    return switch (n % 10) {
+      1 => '${n}st',
+      2 => '${n}nd',
+      3 => '${n}rd',
+      _ => '${n}th',
     };
   }
 
@@ -393,32 +546,56 @@ class _ParentScreenState extends State<ParentScreen> {
         }
         final chores = snapshot.data?.docs ?? [];
         if (chores.isEmpty) {
-          return const Center(
-            child: Text(
-              'No chores yet!\nTap + to add your first chore.',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 16, color: Colors.grey),
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.add_task_rounded, size: 56, color: Colors.grey[300]),
+                const SizedBox(height: 12),
+                Text(
+                  'No chores yet!',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.grey[500],
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text('Tap + to add your first chore.',
+                    style: TextStyle(color: Colors.grey[400])),
+              ],
             ),
           );
         }
         return ListView.builder(
+          padding: const EdgeInsets.symmetric(vertical: 8),
           itemCount: chores.length,
           itemBuilder: (context, index) {
             final chore = chores[index].data() as Map<String, dynamic>;
             final choreId = chores[index].id;
             final status = chore['status'] as String? ?? 'pending';
+            final isRecurring = chore['isRecurring'] == true;
+            final nextDueRaw = chore['nextDueAt'];
+            final nextDueAt =
+                nextDueRaw != null ? (nextDueRaw as Timestamp).toDate() : null;
+            final now = DateTime.now();
+            final isScheduled = nextDueAt != null &&
+                nextDueAt.isAfter(DateTime(now.year, now.month, now.day));
+            final sc = isScheduled
+                ? const Color(0xFFD1D5DB)
+                : _statusColor(status);
             return Dismissible(
               key: Key(choreId),
               direction: DismissDirection.endToStart,
               background: Container(
-                margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
                 decoration: BoxDecoration(
-                  color: Colors.red,
-                  borderRadius: BorderRadius.circular(12),
+                  color: _red,
+                  borderRadius: BorderRadius.circular(16),
                 ),
                 alignment: Alignment.centerRight,
                 padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: const Icon(Icons.delete, color: Colors.white),
+                child: const Icon(Icons.delete_rounded, color: Colors.white),
               ),
               confirmDismiss: (_) async {
                 if (status == 'submitted') {
@@ -436,8 +613,7 @@ class _ParentScreenState extends State<ParentScreen> {
                         ElevatedButton(
                           onPressed: () => Navigator.pop(ctx, true),
                           style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.red,
-                              foregroundColor: Colors.white),
+                              backgroundColor: _red, foregroundColor: Colors.white),
                           child: const Text('Delete'),
                         ),
                       ],
@@ -453,33 +629,90 @@ class _ParentScreenState extends State<ParentScreen> {
                   .doc(choreId)
                   .delete(),
               child: Card(
-                margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                child: ListTile(
-                  leading: Icon(
-                    status == 'pending'
-                        ? Icons.radio_button_unchecked
-                        : status == 'submitted'
-                            ? Icons.hourglass_empty
-                            : status == 'approved'
-                                ? Icons.check_circle
-                                : Icons.cancel,
-                    color: status == 'pending'
-                        ? Colors.grey
-                        : status == 'submitted'
-                            ? Colors.orange
-                            : status == 'approved'
-                                ? Colors.green
-                                : Colors.red,
+                margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                clipBehavior: Clip.antiAlias,
+                child: IntrinsicHeight(
+                  child: Row(
+                    children: [
+                      Container(width: 4, color: sc),
+                      Expanded(
+                        child: InkWell(
+                          onTap: status == 'submitted'
+                              ? () => _reviewProof(context, choreId, chore)
+                              : null,
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: Text(
+                                              chore['title'],
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.w600,
+                                                fontSize: 15,
+                                                color: isScheduled
+                                                    ? Colors.grey[400]
+                                                    : null,
+                                              ),
+                                            ),
+                                          ),
+                                          if (isRecurring)
+                                            Padding(
+                                              padding: const EdgeInsets.only(left: 4),
+                                              child: Icon(
+                                                Icons.repeat_rounded,
+                                                size: 14,
+                                                color: isScheduled
+                                                    ? Colors.grey[300]
+                                                    : Colors.grey[400],
+                                              ),
+                                            ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 3),
+                                      Text(
+                                        _choreSubtitle(chore, status),
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: isScheduled
+                                              ? Colors.grey[400]
+                                              : sc,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 10, vertical: 5),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFFFFBEB),
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  child: Text(
+                                    '${chore['points']} pts',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 12,
+                                      color: _amber,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                  title: Text(chore['title']),
-                  subtitle: Text(_choreSubtitle(chore, status)),
-                  trailing: Text(
-                    '${chore['points']} pts',
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  onTap: status == 'submitted'
-                      ? () => _reviewProof(context, choreId, chore)
-                      : null,
                 ),
               ),
             );
@@ -501,15 +734,29 @@ class _ParentScreenState extends State<ParentScreen> {
               }
               final rewards = snapshot.data?.docs ?? [];
               if (rewards.isEmpty) {
-                return const Center(
-                  child: Text(
-                    'No rewards yet!\nTap + to add a reward.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 16, color: Colors.grey),
+                return Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.card_giftcard_rounded, size: 56, color: Colors.grey[300]),
+                      const SizedBox(height: 12),
+                      Text(
+                        'No rewards yet!',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.grey[500],
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text('Tap + to add a reward.',
+                          style: TextStyle(color: Colors.grey[400])),
+                    ],
                   ),
                 );
               }
               return ListView.builder(
+                padding: const EdgeInsets.symmetric(vertical: 8),
                 itemCount: rewards.length,
                 itemBuilder: (context, index) {
                   final reward = rewards[index].data() as Map<String, dynamic>;
@@ -518,15 +765,14 @@ class _ParentScreenState extends State<ParentScreen> {
                     key: Key(rewardId),
                     direction: DismissDirection.endToStart,
                     background: Container(
-                      margin: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 6),
+                      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
                       decoration: BoxDecoration(
-                        color: Colors.red,
-                        borderRadius: BorderRadius.circular(12),
+                        color: _red,
+                        borderRadius: BorderRadius.circular(16),
                       ),
                       alignment: Alignment.centerRight,
                       padding: const EdgeInsets.symmetric(horizontal: 20),
-                      child: const Icon(Icons.delete, color: Colors.white),
+                      child: const Icon(Icons.delete_rounded, color: Colors.white),
                     ),
                     onDismissed: (_) => _db
                         .collection('households')
@@ -535,15 +781,47 @@ class _ParentScreenState extends State<ParentScreen> {
                         .doc(rewardId)
                         .delete(),
                     child: Card(
-                      margin: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 6),
-                      child: ListTile(
-                        leading:
-                            const Icon(Icons.star, color: Colors.amber),
-                        title: Text(reward['title']),
-                        trailing: Text(
-                          '${reward['pointCost']} pts',
-                          style: const TextStyle(fontWeight: FontWeight.bold),
+                      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 42,
+                              height: 42,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFFFFBEB),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: const Icon(Icons.star_rounded, color: _amber, size: 24),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                reward['title'],
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 15,
+                                ),
+                              ),
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 5),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFFFFBEB),
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: Text(
+                                '${reward['pointCost']} pts',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 12,
+                                  color: _amber,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
@@ -553,12 +831,17 @@ class _ParentScreenState extends State<ParentScreen> {
             },
           ),
         ),
-        const Divider(),
+        const Divider(height: 1),
         Padding(
-          padding: const EdgeInsets.all(8.0),
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
           child: Row(
             children: [
-              const Text('Redemption requests:', style: TextStyle(fontWeight: FontWeight.bold)),
+              const Icon(Icons.inbox_rounded, size: 18, color: _forest),
+              const SizedBox(width: 6),
+              Text(
+                'Redemption requests',
+                style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey[700]),
+              ),
             ],
           ),
         ),
@@ -572,18 +855,47 @@ class _ParentScreenState extends State<ParentScreen> {
               }
               final redemptions = snapshot.data?.docs ?? [];
               if (redemptions.isEmpty) {
-                return const Center(
-                  child: Text('No redemption requests yet.', style: TextStyle(color: Colors.grey)),
+                return Center(
+                  child: Text(
+                    'No redemption requests yet.',
+                    style: TextStyle(color: Colors.grey[400], fontSize: 13),
+                  ),
                 );
               }
               return ListView.builder(
+                padding: const EdgeInsets.symmetric(vertical: 4),
                 itemCount: redemptions.length,
                 itemBuilder: (context, index) {
-                  final redemption = redemptions[index].data() as Map<String, dynamic>;
+                  final redemption =
+                      redemptions[index].data() as Map<String, dynamic>;
                   final status = redemption['status'] ?? 'pending';
                   return ListTile(
-                    title: Text(redemption['rewardTitle']),
-                    subtitle: Text('By ${redemption['redeemedByName']}'),
+                    dense: true,
+                    leading: Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                        color: status == 'pending'
+                            ? const Color(0xFFFFFBEB)
+                            : const Color(0xFFECFDF5),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Icon(
+                        status == 'pending'
+                            ? Icons.star_rounded
+                            : Icons.check_circle_rounded,
+                        color: status == 'pending' ? _amber : _green,
+                        size: 20,
+                      ),
+                    ),
+                    title: Text(
+                      redemption['rewardTitle'],
+                      style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                    ),
+                    subtitle: Text(
+                      'By ${redemption['redeemedByName']}',
+                      style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+                    ),
                     trailing: status == 'pending'
                         ? ElevatedButton(
                             onPressed: () async {
@@ -594,9 +906,15 @@ class _ParentScreenState extends State<ParentScreen> {
                                   .doc(redemptions[index].id)
                                   .update({'status': 'fulfilled'});
                             },
-                            child: const Text('Mark Done'),
+                            style: ElevatedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 6),
+                              minimumSize: Size.zero,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                            child: const Text('Done', style: TextStyle(fontSize: 12)),
                           )
-                        : const Icon(Icons.check, color: Colors.green),
+                        : const Icon(Icons.check_circle_rounded, color: _green),
                   );
                 },
               );
@@ -617,10 +935,17 @@ class _ParentScreenState extends State<ParentScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(_householdData?['name'] ?? 'My Household'),
+        title: Text(
+          _householdData?['name'] ?? 'My Household',
+          style: GoogleFonts.plusJakartaSans(
+            color: Colors.white,
+            fontSize: 20,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.person_outline),
+            icon: const Icon(Icons.person_outline_rounded),
             tooltip: 'Profile',
             onPressed: () => Navigator.push(
               context,
@@ -628,7 +953,7 @@ class _ParentScreenState extends State<ParentScreen> {
             ),
           ),
           IconButton(
-            icon: const Icon(Icons.logout),
+            icon: const Icon(Icons.logout_rounded),
             onPressed: () async {
               await FirebaseAuth.instance.signOut();
               await GoogleSignIn().signOut();
@@ -646,18 +971,18 @@ class _ParentScreenState extends State<ParentScreen> {
         onPressed: _currentTab == 0
             ? () => _showAddChoreDialog(householdId)
             : () => _showAddRewardDialog(householdId),
-        child: const Icon(Icons.add),
+        child: const Icon(Icons.add_rounded),
       ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentTab,
         onTap: (index) => setState(() => _currentTab = index),
         items: const [
           BottomNavigationBarItem(
-            icon: Icon(Icons.list),
+            icon: Icon(Icons.task_alt_rounded),
             label: 'Chores',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.star),
+            icon: Icon(Icons.card_giftcard_rounded),
             label: 'Rewards',
           ),
         ],

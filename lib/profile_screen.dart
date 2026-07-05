@@ -3,6 +3,11 @@ import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+const _forest = Color(0xFF2D6A4F);
+const _deepForest = Color(0xFF1B4332);
+const _green = Color(0xFF059669);
+const _red = Color(0xFFDC2626);
+
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
 
@@ -34,8 +39,13 @@ class ProfileScreen extends StatelessWidget {
               const SizedBox(height: 24),
               if (householdIds.isNotEmpty) ...[
                 const Text(
-                  'Household',
-                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.grey),
+                  'HOUSEHOLD',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF7C3AED),
+                    letterSpacing: 1.2,
+                  ),
                 ),
                 const SizedBox(height: 8),
                 ...householdIds.map(
@@ -57,20 +67,25 @@ class _UserCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isParent = role == 'parent';
+    final avatarBg = isParent ? const Color(0xFFDCFCE7) : const Color(0xFFD1FAE5);
+    final avatarFg = isParent ? _deepForest : _green;
+    final chipBg = isParent ? const Color(0xFFDCFCE7) : const Color(0xFFD1FAE5);
+    final chipFg = isParent ? _deepForest : _green;
+
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(20),
         child: Row(
           children: [
             CircleAvatar(
               radius: 32,
-              backgroundColor: isParent ? Colors.blue[100] : Colors.green[100],
+              backgroundColor: avatarBg,
               child: Text(
                 name.isNotEmpty ? name[0].toUpperCase() : '?',
                 style: TextStyle(
                   fontSize: 28,
-                  fontWeight: FontWeight.bold,
-                  color: isParent ? Colors.blue[800] : Colors.green[800],
+                  fontWeight: FontWeight.w800,
+                  color: avatarFg,
                 ),
               ),
             ),
@@ -81,23 +96,28 @@ class _UserCard extends StatelessWidget {
                 children: [
                   Text(
                     name,
-                    style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                    style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
                   ),
                   const SizedBox(height: 2),
                   Text(
                     email,
-                    style: TextStyle(color: Colors.grey[600], fontSize: 13),
+                    style: TextStyle(color: Colors.grey[500], fontSize: 13),
                   ),
-                  const SizedBox(height: 8),
-                  Chip(
-                    label: Text(isParent ? 'Parent' : 'Child'),
-                    backgroundColor: isParent ? Colors.blue[100] : Colors.green[100],
-                    labelStyle: TextStyle(
-                      color: isParent ? Colors.blue[800] : Colors.green[800],
-                      fontWeight: FontWeight.w600,
-                      fontSize: 12,
+                  const SizedBox(height: 10),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: chipBg,
+                      borderRadius: BorderRadius.circular(20),
                     ),
-                    visualDensity: VisualDensity.compact,
+                    child: Text(
+                      isParent ? 'Parent' : 'Child',
+                      style: TextStyle(
+                        color: chipFg,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 12,
+                      ),
+                    ),
                   ),
                 ],
               ),
@@ -178,7 +198,7 @@ class _HouseholdCardState extends State<_HouseholdCard> {
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
+              backgroundColor: _red,
               foregroundColor: Colors.white,
             ),
             onPressed: () => Navigator.pop(ctx, true),
@@ -243,124 +263,112 @@ class _HouseholdCardState extends State<_HouseholdCard> {
             return Card(
               margin: const EdgeInsets.only(bottom: 12),
               child: Padding(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.all(20),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     // Name row
                     Row(
                       children: [
-                        const Icon(Icons.home_outlined, color: Colors.deepPurple),
-                        const SizedBox(width: 8),
+                        Container(
+                          width: 36,
+                          height: 36,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFDCFCE7),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: const Icon(Icons.home_rounded, color: _forest, size: 20),
+                        ),
+                        const SizedBox(width: 10),
                         Expanded(
                           child: Text(
                             householdName,
                             style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
+                              fontSize: 17,
+                              fontWeight: FontWeight.w700,
                             ),
                           ),
                         ),
                         if (isParent)
                           isPremium
                               ? IconButton(
-                                  icon: const Icon(Icons.edit_outlined),
+                                  icon: const Icon(Icons.edit_outlined, color: _forest),
                                   tooltip: 'Rename',
                                   onPressed: () => _rename(householdName),
                                 )
-                              : Tooltip(
-                                  message: 'Premium feature',
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: const [
-                                      Icon(Icons.lock, size: 14, color: Colors.grey),
-                                      SizedBox(width: 2),
-                                      Text(
-                                        'Rename',
-                                        style: TextStyle(fontSize: 11, color: Colors.grey),
-                                      ),
-                                    ],
-                                  ),
+                              : Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: const [
+                                    Icon(Icons.lock_outline, size: 14, color: Color(0xFF9CA3AF)),
+                                    SizedBox(width: 2),
+                                    Text(
+                                      'Rename',
+                                      style: TextStyle(fontSize: 11, color: Color(0xFF9CA3AF)),
+                                    ),
+                                  ],
                                 ),
                       ],
                     ),
 
-                    const Divider(height: 24),
+                    const Divider(height: 28),
 
-                    // Members
                     const Text(
                       'MEMBERS',
-                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.grey, letterSpacing: 1),
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: _forest,
+                        letterSpacing: 1.2,
+                      ),
                     ),
-                    const SizedBox(height: 8),
-                    ...parentIds.map((uid) => ListTile(
-                          dense: true,
-                          contentPadding: EdgeInsets.zero,
-                          leading: CircleAvatar(
-                            radius: 16,
-                            backgroundColor: Colors.blue[100],
-                            child: Text(
-                              (names[uid] ?? 'P')[0].toUpperCase(),
-                              style: TextStyle(fontSize: 13, color: Colors.blue[800]),
-                            ),
-                          ),
-                          title: Text(
-                            uid == currentUid
-                                ? '${names[uid] ?? 'Parent'} (You)'
-                                : names[uid] ?? 'Parent',
-                          ),
-                          trailing: const Text(
-                            'Parent',
-                            style: TextStyle(fontSize: 12, color: Colors.grey),
-                          ),
+                    const SizedBox(height: 10),
+                    ...parentIds.map((uid) => _MemberTile(
+                          uid: uid,
+                          name: uid == currentUid
+                              ? '${names[uid] ?? 'Parent'} (You)'
+                              : names[uid] ?? 'Parent',
+                          role: 'Parent',
+                          isParent: true,
                         )),
-                    ...childIds.map((uid) => ListTile(
-                          dense: true,
-                          contentPadding: EdgeInsets.zero,
-                          leading: CircleAvatar(
-                            radius: 16,
-                            backgroundColor: Colors.green[100],
-                            child: Text(
-                              (names[uid] ?? 'C')[0].toUpperCase(),
-                              style: TextStyle(fontSize: 13, color: Colors.green[800]),
-                            ),
-                          ),
-                          title: Text(
-                            uid == currentUid
-                                ? '${names[uid] ?? 'Child'} (You)'
-                                : names[uid] ?? 'Child',
-                          ),
-                          trailing: const Text(
-                            'Child',
-                            style: TextStyle(fontSize: 12, color: Colors.grey),
-                          ),
+                    ...childIds.map((uid) => _MemberTile(
+                          uid: uid,
+                          name: uid == currentUid
+                              ? '${names[uid] ?? 'Child'} (You)'
+                              : names[uid] ?? 'Child',
+                          role: 'Child',
+                          isParent: false,
                         )),
 
-                    // Invite codes (parents only)
                     if (isParent) ...[
-                      const Divider(height: 24),
+                      const Divider(height: 28),
                       const Text(
                         'INVITE CODES',
-                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.grey, letterSpacing: 1),
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: _forest,
+                          letterSpacing: 1.2,
+                        ),
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 10),
                       _CodeRow(label: 'Child', code: childCode, onCopy: () => _copy(childCode)),
-                      const SizedBox(height: 4),
+                      const SizedBox(height: 6),
                       _CodeRow(label: 'Co-parent', code: parentCode, onCopy: () => _copy(parentCode)),
                     ],
 
-                    const Divider(height: 24),
+                    const Divider(height: 28),
 
                     SizedBox(
                       width: double.infinity,
                       child: OutlinedButton.icon(
-                        icon: const Icon(Icons.exit_to_app, color: Colors.red),
+                        icon: const Icon(Icons.exit_to_app_rounded, color: _red),
                         label: const Text(
                           'Leave Household',
-                          style: TextStyle(color: Colors.red),
+                          style: TextStyle(color: _red),
                         ),
                         style: OutlinedButton.styleFrom(
-                          side: const BorderSide(color: Colors.red),
+                          side: const BorderSide(color: _red),
+                          foregroundColor: _red,
                         ),
                         onPressed: () => _leave(parentIds),
                       ),
@@ -376,6 +384,51 @@ class _HouseholdCardState extends State<_HouseholdCard> {
   }
 }
 
+class _MemberTile extends StatelessWidget {
+  final String uid, name, role;
+  final bool isParent;
+  const _MemberTile({
+    required this.uid,
+    required this.name,
+    required this.role,
+    required this.isParent,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final avatarBg = isParent ? const Color(0xFFDCFCE7) : const Color(0xFFD1FAE5);
+    final avatarFg = isParent ? _deepForest : _green;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 16,
+            backgroundColor: avatarBg,
+            child: Text(
+              name[0].toUpperCase(),
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: avatarFg),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(child: Text(name, style: const TextStyle(fontSize: 14))),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: avatarBg,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(
+              role,
+              style: TextStyle(fontSize: 11, color: avatarFg, fontWeight: FontWeight.w600),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _CodeRow extends StatelessWidget {
   final String label, code;
   final VoidCallback onCopy;
@@ -383,21 +436,34 @@ class _CodeRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Text('$label:', style: const TextStyle(fontSize: 13, color: Colors.grey)),
-        const SizedBox(width: 8),
-        Text(
-          code,
-          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, letterSpacing: 3),
-        ),
-        const Spacer(),
-        IconButton(
-          icon: const Icon(Icons.copy, size: 18),
-          onPressed: onCopy,
-          tooltip: 'Copy',
-        ),
-      ],
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF0FDF4),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Text(
+            '$label: ',
+            style: const TextStyle(fontSize: 13, color: Color(0xFF166534), fontWeight: FontWeight.w500),
+          ),
+          Text(
+            code,
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 4,
+              color: _forest,
+            ),
+          ),
+          const Spacer(),
+          GestureDetector(
+            onTap: onCopy,
+            child: const Icon(Icons.copy_rounded, size: 18, color: _forest),
+          ),
+        ],
+      ),
     );
   }
 }

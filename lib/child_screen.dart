@@ -2,12 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'dart:io';
 import 'messaging_service.dart';
 import 'profile_screen.dart';
 import 'reward_service.dart';
+
+const _forest = Color(0xFF2D6A4F);
+const _amber = Color(0xFFF59E0B);
+const _green = Color(0xFF059669);
+const _red = Color(0xFFDC2626);
 
 class ChildScreen extends StatefulWidget {
   const ChildScreen({super.key});
@@ -148,6 +154,81 @@ class _ChildScreenState extends State<ChildScreen> {
     }
   }
 
+  Widget _statusChip(String status, bool isMySubmission, bool claimedByOther) {
+    if (claimedByOther) {
+      return _chip('Claimed', const Color(0xFF6B7280), const Color(0xFFF3F4F6));
+    }
+    return switch (status) {
+      'submitted' => _chip('Pending review', const Color(0xFFD97706), const Color(0xFFFFFBEB)),
+      'approved'  => _chip('Approved ✓', _green, const Color(0xFFECFDF5)),
+      'rejected'  => _chip('Try again', _red, const Color(0xFFFEF2F2)),
+      _           => _chip('Tap to complete', _forest, const Color(0xFFF0FDF4)),
+    };
+  }
+
+  Widget _chip(String label, Color textColor, Color bgColor) {
+    return Container(
+      margin: const EdgeInsets.only(top: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(color: bgColor, borderRadius: BorderRadius.circular(20)),
+      child: Text(
+        label,
+        style: TextStyle(fontSize: 11, color: textColor, fontWeight: FontWeight.w600),
+      ),
+    );
+  }
+
+  Widget _buildPointsHeader(int points, String name) {
+    final firstName = name.split(' ').first;
+    return Container(
+      width: double.infinity,
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Color(0xFF2D6A4F), Color(0xFF1B4332)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+      ),
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Hi $firstName! 👋',
+            style: const TextStyle(
+              color: Color(0xFFDDD6FE),
+              fontSize: 15,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                '$points',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 44,
+                  fontWeight: FontWeight.w800,
+                  height: 1,
+                ),
+              ),
+              const SizedBox(width: 8),
+              const Padding(
+                padding: EdgeInsets.only(bottom: 6),
+                child: Text(
+                  '⭐ points',
+                  style: TextStyle(color: Color(0xFFDDD6FE), fontSize: 16),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildChoresTab(String householdId) {
     final currentUserId = _auth.currentUser!.uid;
 
@@ -164,22 +245,48 @@ class _ChildScreenState extends State<ChildScreen> {
         }
 
         final chores = (snapshot.data?.docs ?? []).where((doc) {
-          final assignedTo =
-              (doc.data() as Map<String, dynamic>)['assignedTo'] as String?;
-          return assignedTo == null || assignedTo == currentUserId;
+          final data = doc.data() as Map<String, dynamic>;
+
+          // Assignment filter
+          final assignedTo = data['assignedTo'] as String?;
+          if (assignedTo != null && assignedTo != currentUserId) return false;
+
+          // Recurring: hide until nextDueAt
+          final nextDueRaw = data['nextDueAt'];
+          if (nextDueRaw != null) {
+            final dueDate = (nextDueRaw as Timestamp).toDate();
+            final today = DateTime.now();
+            final todayStart = DateTime(today.year, today.month, today.day);
+            if (dueDate.isAfter(todayStart)) return false;
+          }
+
+          return true;
         }).toList();
 
         if (chores.isEmpty) {
-          return const Center(
-            child: Text(
-              'No chores yet!\nCheck back later.',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 16, color: Colors.grey),
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.task_alt_rounded, size: 56, color: Colors.grey[300]),
+                const SizedBox(height: 12),
+                Text(
+                  'No chores yet!',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.grey[500],
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text('Check back later.', style: TextStyle(color: Colors.grey[400])),
+              ],
             ),
           );
         }
 
         return ListView.builder(
+          padding: const EdgeInsets.symmetric(vertical: 8),
           itemCount: chores.length,
           itemBuilder: (context, index) {
             final chore = chores[index].data() as Map<String, dynamic>;
@@ -191,68 +298,93 @@ class _ChildScreenState extends State<ChildScreen> {
 
             final IconData icon;
             final Color iconColor;
-            if (claimedByOther) {
-              icon = Icons.lock;
-              iconColor = Colors.grey;
-            } else if (status == 'pending') {
-              icon = Icons.radio_button_unchecked;
-              iconColor = Colors.grey;
-            } else if (status == 'submitted') {
-              icon = Icons.hourglass_empty;
-              iconColor = Colors.orange;
-            } else if (status == 'approved') {
-              icon = Icons.check_circle;
-              iconColor = Colors.green;
-            } else {
-              icon = Icons.cancel;
-              iconColor = Colors.red;
-            }
+            final Color iconBgColor;
 
-            final String subtitle;
-            if (status == 'pending') {
-              subtitle = 'Tap to submit proof';
-            } else if (status == 'submitted' && isMySubmission) {
-              subtitle = 'Waiting for approval...';
-            } else if (claimedByOther) {
-              subtitle =
-                  'Claimed by ${chore['submittedByName'] ?? 'another child'}';
+            if (claimedByOther) {
+              icon = Icons.lock_outline_rounded;
+              iconColor = const Color(0xFF9CA3AF);
+              iconBgColor = const Color(0xFFF3F4F6);
+            } else if (status == 'pending') {
+              icon = Icons.circle_outlined;
+              iconColor = _forest;
+              iconBgColor = const Color(0xFFF0FDF4);
+            } else if (status == 'submitted') {
+              icon = Icons.hourglass_top_rounded;
+              iconColor = const Color(0xFFD97706);
+              iconBgColor = const Color(0xFFFFFBEB);
             } else if (status == 'approved') {
-              subtitle = 'Approved! +${chore['points']} pts';
+              icon = Icons.check_circle_rounded;
+              iconColor = _green;
+              iconBgColor = const Color(0xFFECFDF5);
             } else {
-              subtitle = 'Rejected — tap to try again';
+              icon = Icons.cancel_rounded;
+              iconColor = _red;
+              iconBgColor = const Color(0xFFFEF2F2);
             }
 
             final tappable = status == 'pending' || status == 'rejected';
 
             return Card(
-              margin:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              child: ListTile(
-                leading: Icon(icon, color: iconColor),
-                title: Text(
-                  chore['title'],
-                  style: TextStyle(
-                    decoration: status == 'approved'
-                        ? TextDecoration.lineThrough
-                        : null,
-                    color: claimedByOther ? Colors.grey : null,
-                  ),
-                ),
-                subtitle: Text(
-                  subtitle,
-                  style:
-                      TextStyle(color: claimedByOther ? Colors.grey : null),
-                ),
-                trailing: Text(
-                  '${chore['points']} pts',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: claimedByOther ? Colors.grey : null,
-                  ),
-                ),
+              margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(16),
                 onTap: tappable
                     ? () => _submitProof(choreId, chore['title'], householdId)
                     : null,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 42,
+                        height: 42,
+                        decoration: BoxDecoration(
+                          color: iconBgColor,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Icon(icon, color: iconColor, size: 22),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              chore['title'],
+                              style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 15,
+                                decoration: status == 'approved'
+                                    ? TextDecoration.lineThrough
+                                    : null,
+                                color: claimedByOther ? Colors.grey[400] : null,
+                              ),
+                            ),
+                            _statusChip(status, isMySubmission, claimedByOther),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: claimedByOther
+                              ? const Color(0xFFF3F4F6)
+                              : const Color(0xFFFFFBEB),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          '+${chore['points']}',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 13,
+                            color: claimedByOther ? Colors.grey[400] : _amber,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             );
           },
@@ -272,16 +404,30 @@ class _ChildScreenState extends State<ChildScreen> {
         final rewards = snapshot.data?.docs ?? [];
 
         if (rewards.isEmpty) {
-          return const Center(
-            child: Text(
-              'No rewards available yet.\nAsk your parent to add some!',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 16, color: Colors.grey),
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.card_giftcard_rounded, size: 56, color: Colors.grey[300]),
+                const SizedBox(height: 12),
+                Text(
+                  'No rewards yet!',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.grey[500],
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text('Ask your parent to add some.',
+                    style: TextStyle(color: Colors.grey[400])),
+              ],
             ),
           );
         }
 
         return ListView.builder(
+          padding: const EdgeInsets.symmetric(vertical: 8),
           itemCount: rewards.length,
           itemBuilder: (context, index) {
             final reward = rewards[index].data() as Map<String, dynamic>;
@@ -290,28 +436,76 @@ class _ChildScreenState extends State<ChildScreen> {
             final canAfford = currentPoints >= pointCost;
 
             return Card(
-              margin:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              child: ListTile(
-                leading: Icon(
-                  Icons.star,
-                  color: canAfford ? Colors.amber : Colors.grey,
-                ),
-                title: Text(reward['title']),
-                subtitle: Text(
-                  canAfford
-                      ? 'You can afford this!'
-                      : 'Need ${pointCost - currentPoints} more points',
-                  style: TextStyle(
-                    color: canAfford ? Colors.green : Colors.grey,
-                  ),
-                ),
-                trailing: ElevatedButton(
-                  onPressed: canAfford
-                      ? () => _redeemReward(rewardId, reward['title'],
-                          pointCost, householdId, currentPoints)
-                      : null,
-                  child: Text('$pointCost pts'),
+              margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 42,
+                      height: 42,
+                      decoration: BoxDecoration(
+                        color: canAfford
+                            ? const Color(0xFFFFFBEB)
+                            : const Color(0xFFF3F4F6),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(
+                        Icons.star_rounded,
+                        color: canAfford ? _amber : Colors.grey[400],
+                        size: 24,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            reward['title'],
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 15,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            canAfford
+                                ? 'You can afford this! 🎉'
+                                : 'Need ${pointCost - currentPoints} more pts',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: canAfford ? _green : Colors.grey[500],
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    ElevatedButton(
+                      onPressed: canAfford
+                          ? () => _redeemReward(rewardId, reward['title'],
+                              pointCost, householdId, currentPoints)
+                          : null,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: canAfford ? _amber : Colors.grey[200],
+                        foregroundColor: canAfford ? Colors.white : Colors.grey[500],
+                        disabledBackgroundColor: Colors.grey[200],
+                        disabledForegroundColor: Colors.grey[400],
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(20)),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      child: Text(
+                        '$pointCost pts',
+                        style: const TextStyle(
+                            fontWeight: FontWeight.w800, fontSize: 13),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             );
@@ -347,23 +541,21 @@ class _ChildScreenState extends State<ChildScreen> {
 
         final householdId = householdIds.first as String;
         final points = userData['points'] as int? ?? 0;
+        final name = userData['name'] as String? ?? '';
 
         return Scaffold(
           appBar: AppBar(
-            title: const Text('Choreward'),
-            actions: [
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                child: Center(
-                  child: Text(
-                    '⭐ $points pts',
-                    style: const TextStyle(
-                        fontWeight: FontWeight.bold, fontSize: 16),
-                  ),
-                ),
+            title: Text(
+              'Choreward',
+              style: GoogleFonts.plusJakartaSans(
+                color: Colors.white,
+                fontSize: 22,
+                fontWeight: FontWeight.w800,
               ),
+            ),
+            actions: [
               IconButton(
-                icon: const Icon(Icons.person_outline),
+                icon: const Icon(Icons.person_outline_rounded),
                 tooltip: 'Profile',
                 onPressed: () => Navigator.push(
                   context,
@@ -371,7 +563,7 @@ class _ChildScreenState extends State<ChildScreen> {
                 ),
               ),
               IconButton(
-                icon: const Icon(Icons.logout),
+                icon: const Icon(Icons.logout_rounded),
                 onPressed: () async {
                   await FirebaseAuth.instance.signOut();
                   await GoogleSignIn().signOut();
@@ -382,19 +574,26 @@ class _ChildScreenState extends State<ChildScreen> {
               ),
             ],
           ),
-          body: _currentTab == 0
-              ? _buildChoresTab(householdId)
-              : _buildRewardsTab(householdId, points),
+          body: Column(
+            children: [
+              _buildPointsHeader(points, name),
+              Expanded(
+                child: _currentTab == 0
+                    ? _buildChoresTab(householdId)
+                    : _buildRewardsTab(householdId, points),
+              ),
+            ],
+          ),
           bottomNavigationBar: BottomNavigationBar(
             currentIndex: _currentTab,
             onTap: (index) => setState(() => _currentTab = index),
             items: const [
               BottomNavigationBarItem(
-                icon: Icon(Icons.list),
+                icon: Icon(Icons.task_alt_rounded),
                 label: 'Chores',
               ),
               BottomNavigationBarItem(
-                icon: Icon(Icons.star),
+                icon: Icon(Icons.card_giftcard_rounded),
                 label: 'Rewards',
               ),
             ],
