@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'dart:io';
+import 'family_service.dart';
 import 'messaging_service.dart';
 import 'profile_screen.dart';
 import 'reward_service.dart';
@@ -539,7 +540,7 @@ class _ChildScreenState extends State<ChildScreen> {
               body: Center(child: CircularProgressIndicator()));
         }
 
-        final householdId = householdIds.first as String;
+        final householdId = resolveActiveHouseholdId(userData);
         final points = userData['points'] as int? ?? 0;
         final name = userData['name'] as String? ?? '';
 

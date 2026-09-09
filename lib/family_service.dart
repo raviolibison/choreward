@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:math';
 
@@ -9,8 +10,15 @@ class PremiumLimitException implements Exception {
   String toString() => message;
 }
 
-const _maxFreeParents = 2;
-const _maxFreeChildren = 3;
+// A user may belong to multiple households. `activeHouseholdId` on the user
+// doc records which one is currently selected; falls back to the first
+// household if unset or stale (e.g. the user left that household).
+String resolveActiveHouseholdId(Map<String, dynamic> userData) {
+  final householdIds = List<String>.from(userData['householdIds'] ?? []);
+  final active = userData['activeHouseholdId'] as String?;
+  if (active != null && householdIds.contains(active)) return active;
+  return householdIds.first;
+}
 
 class FamilyService {
   final _db = FirebaseFirestore.instance;
@@ -53,123 +61,23 @@ class FamilyService {
     };
   }
 
-  Future<void> joinHouseholdAsChild(String inviteCode) async {
-    final user = _auth.currentUser!;
-
-    final query = await _db
-        .collection('households')
-        .where('childInviteCode', isEqualTo: inviteCode.toUpperCase())
-        .get();
-
-    if (query.docs.isEmpty) {
-      throw Exception('Invalid invite code');
-    }
-
-    final household = query.docs.first;
-    final householdId = household.id;
-    final householdData = household.data();
-
-    final isPremium = householdData['isPremium'] == true;
-    final currentChildren = List<String>.from(householdData['childIds'] ?? []);
-    if (!isPremium && currentChildren.length >= _maxFreeChildren) {
-      throw const PremiumLimitException('children');
-    }
-
-    final userDoc = await _db.collection('users').doc(user.uid).get();
-
-    await _db.collection('households').doc(householdId).update({
-      'childIds': FieldValue.arrayUnion([user.uid]),
-    });
-
-    if (userDoc.exists) {
-      final updates = <String, dynamic>{
-        'householdIds': FieldValue.arrayUnion([householdId]),
-      };
-      if (userDoc.data()?['role'] == null) {
-        updates['role'] = 'child';
-      }
-      await _db.collection('users').doc(user.uid).update(updates);
-    } else {
-      await _db.collection('users').doc(user.uid).set({
-        'name': user.displayName ?? 'Child',
-        'email': user.email,
-        'role': 'child',
-        'householdIds': [householdId],
-        'points': 0,
-      });
-    }
-  }
-
-  Future<void> joinHouseholdAsParent(String inviteCode) async {
-    final user = _auth.currentUser!;
-
-    final query = await _db
-        .collection('households')
-        .where('householdInviteCode', isEqualTo: inviteCode.toUpperCase())
-        .get();
-
-    if (query.docs.isEmpty) {
-      throw Exception('Invalid invite code');
-    }
-
-    final household = query.docs.first;
-    final householdId = household.id;
-    final householdData = household.data();
-
-    final isPremium = householdData['isPremium'] == true;
-    final currentParents = List<String>.from(householdData['parentIds'] ?? []);
-    if (!isPremium && currentParents.length >= _maxFreeParents) {
-      throw const PremiumLimitException('parents');
-    }
-
-    final userDoc = await _db.collection('users').doc(user.uid).get();
-
-    await _db.collection('households').doc(householdId).update({
-      'parentIds': FieldValue.arrayUnion([user.uid]),
-    });
-
-    if (userDoc.exists) {
-      await _db.collection('users').doc(user.uid).update({
-        'householdIds': FieldValue.arrayUnion([householdId]),
-        'role': 'parent',
-      });
-    } else {
-      await _db.collection('users').doc(user.uid).set({
-        'name': user.displayName ?? 'Parent',
-        'email': user.email,
-        'role': 'parent',
-        'householdIds': [householdId],
-      });
-    }
-  }
-
+  // Joining a household requires proving possession of an invite code,
+  // which can only be verified server-side — Firestore rules can't check a
+  // code that isn't part of the write being made. This calls the
+  // `joinHousehold` Cloud Function, which validates the code and premium
+  // limits with Admin privileges and writes both documents atomically.
   Future<void> joinWithCode(String inviteCode) async {
-  final code = inviteCode.toUpperCase().trim();
-
-  // Check if it's a child invite code
-  final childQuery = await _db
-      .collection('households')
-      .where('childInviteCode', isEqualTo: code)
-      .get();
-
-  if (childQuery.docs.isNotEmpty) {
-    await joinHouseholdAsChild(code);
-    return;
+    try {
+      await FirebaseFunctions.instance
+          .httpsCallable('joinHousehold')
+          .call({'inviteCode': inviteCode.toUpperCase().trim()});
+    } on FirebaseFunctionsException catch (e) {
+      if (e.code == 'resource-exhausted') {
+        throw PremiumLimitException(e.message ?? 'members');
+      }
+      throw Exception(e.message ?? 'Invalid invite code');
+    }
   }
-
-  // Check if it's a co-parent invite code
-  final parentQuery = await _db
-      .collection('households')
-      .where('householdInviteCode', isEqualTo: code)
-      .get();
-
-  if (parentQuery.docs.isNotEmpty) {
-    await joinHouseholdAsParent(code);
-    return;
-  }
-
-  throw Exception('Invalid invite code');
-}
 
   // Get current user data
   Future<Map<String, dynamic>?> getUserData() async {

@@ -17,17 +17,24 @@ service cloud.firestore {
              get(/databases/$(database)/documents/households/$(householdId)).data.parentIds;
     }
 
-    // Users can fully manage their own document.
-    // Others can only change the `points` field (parents awarding/adjusting points).
-    // Self can decrement points (reward redemption transaction) but not inflate them —
-    // enforced by RewardService running a server-side transaction.
+    // Users can manage their own document, but may never increase their own
+    // points — only decrease (reward redemption transaction).
+    // A parent in one of the target user's households may adjust that
+    // user's `points` field only (chore-approval awards).
     match /users/{userId} {
       allow read: if isAuth();
       allow create, delete: if isAuth() && request.auth.uid == userId;
-      allow update: if isAuth() && (
-        request.auth.uid == userId ||
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['points'])
+
+      allow update: if isAuth() && request.auth.uid == userId && (
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['points']) ||
+        request.resource.data.points < resource.data.points
       );
+
+      allow update: if isAuth() && request.auth.uid != userId &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['points']) &&
+        resource.data.get('householdIds', []).size() > 0 &&
+        request.auth.uid in
+          get(/databases/$(database)/documents/households/$(resource.data.householdIds[0])).data.parentIds;
     }
 
     match /households/{householdId} {
@@ -35,16 +42,14 @@ service cloud.firestore {
       allow read: if isAuth();
       allow create: if isAuth();
       allow delete: if isAuth() && isHouseholdParent(householdId);
+      // Note: joining a household (adding your own UID to parentIds/childIds)
+      // is NOT allowed here — it requires proving possession of an invite
+      // code, which can only be verified server-side. See the
+      // `joinHousehold` callable Cloud Function, which uses the Admin SDK
+      // and bypasses these rules.
       allow update: if isAuth() && (
         // Existing parents can change anything.
         isHouseholdParent(householdId) ||
-        // Self-service join: add only own UID to parentIds or childIds.
-        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['parentIds']) &&
-         request.resource.data.parentIds.hasAll(resource.data.parentIds) &&
-         request.resource.data.parentIds.removeAll(resource.data.parentIds).hasOnly([request.auth.uid])) ||
-        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['childIds']) &&
-         request.resource.data.get('childIds', []).hasAll(resource.data.get('childIds', [])) &&
-         request.resource.data.get('childIds', []).removeAll(resource.data.get('childIds', [])).hasOnly([request.auth.uid])) ||
         // Self-service leave: remove only own UID from parentIds or childIds.
         (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['parentIds']) &&
          resource.data.parentIds.hasAll(request.resource.data.parentIds) &&

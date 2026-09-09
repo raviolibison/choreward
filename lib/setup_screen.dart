@@ -1,12 +1,16 @@
 import 'package:flutter/material.dart';
 import 'family_service.dart';
 
-// Shown when a free household hits its member limit
+// Shown when someone tries to join a household that has hit its free-plan
+// member limit. This is purely informational — the joiner isn't a member of
+// that household yet, so they can't be the one to buy Premium for it; only
+// an existing parent of that household can (see the Premium entry points in
+// parent_screen.dart / profile_screen.dart, which open PaywallScreen).
 void showUpgradeDialog(BuildContext context, String limitedResource) {
   showDialog(
     context: context,
     builder: (context) => AlertDialog(
-      title: const Text('Your family is growing!'),
+      title: const Text('This household is full'),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -17,9 +21,10 @@ void showUpgradeDialog(BuildContext context, String limitedResource) {
                 : 'This household has reached the free plan limit of 2 parents.',
           ),
           const SizedBox(height: 16),
-          const Text('Free plan includes:', style: TextStyle(fontWeight: FontWeight.bold)),
-          const SizedBox(height: 4),
-          const Text('• Up to 2 parents\n• Up to 3 children\n• Chores, rewards & photo proof'),
+          const Text(
+            'Ask a parent in that household to upgrade to Premium from their '
+            'Profile screen to add more members.',
+          ),
           const SizedBox(height: 12),
           const Text('Premium unlocks:', style: TextStyle(fontWeight: FontWeight.bold)),
           const SizedBox(height: 4),
@@ -27,13 +32,9 @@ void showUpgradeDialog(BuildContext context, String limitedResource) {
         ],
       ),
       actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Maybe later'),
-        ),
         ElevatedButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('Upgrade to Premium'),
+          child: const Text('Got it'),
         ),
       ],
     ),

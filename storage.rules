@@ -2,8 +2,15 @@ rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
     match /proof/{householdId}/{fileName} {
-      // Any authenticated user can upload/read proof photos
-      allow read, write: if request.auth != null;
+      // Only members (parent or child) of the household this proof photo
+      // belongs to may read or write it.
+      allow read, write: if request.auth != null &&
+        (
+          request.auth.uid in
+            firestore.get(/databases/(default)/documents/households/$(householdId)).data.parentIds ||
+          request.auth.uid in
+            firestore.get(/databases/(default)/documents/households/$(householdId)).data.get('childIds', [])
+        );
     }
   }
 }

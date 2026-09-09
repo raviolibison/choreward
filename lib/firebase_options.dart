@@ -51,27 +51,29 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions android = FirebaseOptions(
     apiKey: 'AIzaSyAoMnUvOYkIiVNoWsb9weY5fa-KYI68HkI',
-    appId: '1:1028098506758:android:a480cafa46f366189c0387',
+    appId: '1:1028098506758:android:aab4c04cf8759a9f9c0387',
     messagingSenderId: '1028098506758',
     projectId: 'chore-app-94635',
     storageBucket: 'chore-app-94635.firebasestorage.app',
   );
-
   static const FirebaseOptions ios = FirebaseOptions(
     apiKey: 'AIzaSyD6T5I0BeGcAXLKPuh8OEy5Z_ECXCi4tq0',
-    appId: '1:1028098506758:ios:a58e7dd19dc24abc9c0387',
+    appId: '1:1028098506758:ios:a454bef917b2455e9c0387',
     messagingSenderId: '1028098506758',
     projectId: 'chore-app-94635',
     storageBucket: 'chore-app-94635.firebasestorage.app',
-    iosBundleId: 'com.example.choreApp',
+    androidClientId: '1028098506758-57unoffpdcbfqa3nv10s0gm0o1admitk.apps.googleusercontent.com',
+    iosClientId: '1028098506758-852pa2d3emnjn2u642oqn5ot93beqska.apps.googleusercontent.com',
+    iosBundleId: 'com.raviolistudios.choreward',
   );
-
   static const FirebaseOptions macos = FirebaseOptions(
     apiKey: 'AIzaSyD6T5I0BeGcAXLKPuh8OEy5Z_ECXCi4tq0',
     appId: '1:1028098506758:ios:a58e7dd19dc24abc9c0387',
     messagingSenderId: '1028098506758',
     projectId: 'chore-app-94635',
     storageBucket: 'chore-app-94635.firebasestorage.app',
+    androidClientId: '1028098506758-57unoffpdcbfqa3nv10s0gm0o1admitk.apps.googleusercontent.com',
+    iosClientId: '1028098506758-qdd27uaakd75d8hc5ktcifcshllen8gk.apps.googleusercontent.com',
     iosBundleId: 'com.example.choreApp',
   );
 
@@ -83,5 +85,4 @@ class DefaultFirebaseOptions {
     authDomain: 'chore-app-94635.firebaseapp.com',
     storageBucket: 'chore-app-94635.firebasestorage.app',
   );
-
 }

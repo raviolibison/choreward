@@ -53,7 +53,30 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _isLoading = false);
   }
 
- 
+  Future<void> _resetPassword() async {
+    final email = _emailController.text.trim();
+    if (email.isEmpty) {
+      setState(() => _errorMessage = 'Enter your email above first, then tap "Forgot password?"');
+      return;
+    }
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+    try {
+      await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Password reset email sent to $email')),
+        );
+      }
+    } on FirebaseAuthException catch (e) {
+      setState(() => _errorMessage = e.message);
+    }
+    if (mounted) setState(() => _isLoading = false);
+  }
+
+
 
   @override
   Widget build(BuildContext context) {
@@ -96,6 +119,10 @@ class _LoginScreenState extends State<LoginScreen> {
               ElevatedButton(
                 onPressed: _signInWithEmail,
                 child: const Text('Sign In'),
+              ),
+              TextButton(
+                onPressed: _resetPassword,
+                child: const Text('Forgot password?'),
               ),
               TextButton(
                 onPressed: () {

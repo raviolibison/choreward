@@ -17,6 +17,19 @@ class RewardService {
     });
   }
 
+  Future<void> updateReward(
+      String householdId, String rewardId, String title, int pointCost) async {
+    await _db
+        .collection('households')
+        .doc(householdId)
+        .collection('rewards')
+        .doc(rewardId)
+        .update({
+      'title': title,
+      'pointCost': pointCost,
+    });
+  }
+
   Future<void> redeemReward(String householdId, String rewardId, String rewardTitle, int pointCost) async {
     final user = _auth.currentUser!;
     final userRef = _db.collection('users').doc(user.uid);

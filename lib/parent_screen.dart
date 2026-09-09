@@ -14,11 +14,11 @@ const _green = Color(0xFF059669);
 const _red = Color(0xFFDC2626);
 
 Color _statusColor(String status) => switch (status) {
-      'submitted' => const Color(0xFFD97706),
-      'approved'  => _green,
-      'rejected'  => _red,
-      _           => _forest,
-    };
+  'submitted' => const Color(0xFFD97706),
+  'approved' => _green,
+  'rejected' => _red,
+  _ => _forest,
+};
 
 class ParentScreen extends StatefulWidget {
   const ParentScreen({super.key});
@@ -47,8 +47,11 @@ class _ParentScreenState extends State<ParentScreen> {
   Future<void> _loadData() async {
     final userData = await _familyService.getUserData();
     if (userData == null) return;
-    final householdId = (userData['householdIds'] as List).first;
-    final householdDoc = await _db.collection('households').doc(householdId).get();
+    final householdId = resolveActiveHouseholdId(userData);
+    final householdDoc = await _db
+        .collection('households')
+        .doc(householdId)
+        .get();
     final householdData = householdDoc.data();
 
     final childIds = List<String>.from(householdData?['childIds'] ?? []);
@@ -56,7 +59,9 @@ class _ParentScreenState extends State<ParentScreen> {
       childIds.map((uid) => _db.collection('users').doc(uid).get()),
     );
     final childNames = Map.fromEntries(
-      childDocs.where((d) => d.exists).map(
+      childDocs
+          .where((d) => d.exists)
+          .map(
             (d) => MapEntry(d.id, (d.data()?['name'] as String?) ?? 'Child'),
           ),
     );
@@ -69,15 +74,30 @@ class _ParentScreenState extends State<ParentScreen> {
     });
   }
 
-  void _showAddChoreDialog(String householdId) {
-    final titleController = TextEditingController();
-    final descriptionController = TextEditingController();
-    int points = 10;
-    String? assignedTo;
-    bool isRecurring = false;
-    String recurrenceType = 'weekly';
-    List<int> recurrenceDays = [];
-    int monthlyDay = 1;
+  void _showChoreDialog(
+    String householdId, {
+    String? choreId,
+    Map<String, dynamic>? existing,
+  }) {
+    final isEditing = choreId != null;
+    final titleController = TextEditingController(
+      text: existing?['title'] as String? ?? '',
+    );
+    final descriptionController = TextEditingController(
+      text: existing?['description'] as String? ?? '',
+    );
+    int points = existing?['points'] as int? ?? 10;
+    String? assignedTo = existing?['assignedTo'] as String?;
+    bool isRecurring = existing?['isRecurring'] == true;
+    String recurrenceType = existing?['recurrenceType'] as String? ?? 'weekly';
+    List<int> recurrenceDays = existing?['recurrenceType'] == 'weekly'
+        ? List<int>.from(existing?['recurrenceDays'] ?? [])
+        : [];
+    int monthlyDay =
+        existing?['recurrenceType'] == 'monthly' &&
+            (existing?['recurrenceDays'] as List?)?.isNotEmpty == true
+        ? (existing!['recurrenceDays'] as List).first as int
+        : 1;
     String? weeklyError;
     final isPremium = _householdData?['isPremium'] == true;
 
@@ -85,7 +105,7 @@ class _ParentScreenState extends State<ParentScreen> {
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Add Chore'),
+          title: Text(isEditing ? 'Edit Chore' : 'Add Chore'),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -129,15 +149,21 @@ class _ParentScreenState extends State<ParentScreen> {
                 // Assign to child
                 if (isPremium && _childNames.isNotEmpty)
                   DropdownButtonFormField<String?>(
-                    value: assignedTo,
+                    initialValue: assignedTo,
                     decoration: const InputDecoration(
                       labelText: 'Assign to',
                       border: OutlineInputBorder(),
                     ),
                     items: [
-                      const DropdownMenuItem(value: null, child: Text('All children')),
+                      const DropdownMenuItem(
+                        value: null,
+                        child: Text('All children'),
+                      ),
                       ..._childNames.entries.map(
-                        (e) => DropdownMenuItem(value: e.key, child: Text(e.value)),
+                        (e) => DropdownMenuItem(
+                          value: e.key,
+                          child: Text(e.value),
+                        ),
                       ),
                     ],
                     onChanged: (v) => setDialogState(() => assignedTo = v),
@@ -158,7 +184,10 @@ class _ParentScreenState extends State<ParentScreen> {
                         const Spacer(),
                         if (!isPremium)
                           const Chip(
-                            label: Text('Premium', style: TextStyle(fontSize: 11)),
+                            label: Text(
+                              'Premium',
+                              style: TextStyle(fontSize: 11),
+                            ),
                             padding: EdgeInsets.zero,
                           ),
                       ],
@@ -173,16 +202,25 @@ class _ParentScreenState extends State<ParentScreen> {
                 if (isPremium) ...[
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,
-                    title: const Text('Repeating chore',
-                        style: TextStyle(fontSize: 14)),
+                    title: const Text(
+                      'Repeating chore',
+                      style: TextStyle(fontSize: 14),
+                    ),
                     subtitle: isRecurring
                         ? Text(
-                            _recurrenceSummary(recurrenceType, recurrenceDays, monthlyDay),
-                            style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+                            _recurrenceSummary(
+                              recurrenceType,
+                              recurrenceDays,
+                              monthlyDay,
+                            ),
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey[500],
+                            ),
                           )
                         : null,
                     value: isRecurring,
-                    activeColor: _forest,
+                    activeThumbColor: _forest,
                     onChanged: (v) => setDialogState(() {
                       isRecurring = v;
                       recurrenceDays = [];
@@ -193,9 +231,21 @@ class _ParentScreenState extends State<ParentScreen> {
                     const SizedBox(height: 4),
                     SegmentedButton<String>(
                       segments: const [
-                        ButtonSegment(value: 'daily',   label: Text('Daily',   style: TextStyle(fontSize: 12))),
-                        ButtonSegment(value: 'weekly',  label: Text('Weekly',  style: TextStyle(fontSize: 12))),
-                        ButtonSegment(value: 'monthly', label: Text('Monthly', style: TextStyle(fontSize: 12))),
+                        ButtonSegment(
+                          value: 'daily',
+                          label: Text('Daily', style: TextStyle(fontSize: 12)),
+                        ),
+                        ButtonSegment(
+                          value: 'weekly',
+                          label: Text('Weekly', style: TextStyle(fontSize: 12)),
+                        ),
+                        ButtonSegment(
+                          value: 'monthly',
+                          label: Text(
+                            'Monthly',
+                            style: TextStyle(fontSize: 12),
+                          ),
+                        ),
                       ],
                       selected: {recurrenceType},
                       onSelectionChanged: (s) => setDialogState(() {
@@ -214,22 +264,26 @@ class _ParentScreenState extends State<ParentScreen> {
                             onTap: () => setDialogState(() {
                               weeklyError = null;
                               if (selected) {
-                                recurrenceDays =
-                                    recurrenceDays.where((d) => d != i).toList();
+                                recurrenceDays = recurrenceDays
+                                    .where((d) => d != i)
+                                    .toList();
                               } else {
                                 recurrenceDays = [...recurrenceDays, i];
                               }
                             }),
                             child: CircleAvatar(
                               radius: 17,
-                              backgroundColor:
-                                  selected ? _forest : const Color(0xFFECFDF5),
+                              backgroundColor: selected
+                                  ? _forest
+                                  : const Color(0xFFECFDF5),
                               child: Text(
                                 ['S', 'M', 'T', 'W', 'T', 'F', 'S'][i],
                                 style: TextStyle(
                                   fontSize: 11,
                                   fontWeight: FontWeight.w700,
-                                  color: selected ? Colors.white : const Color(0xFF6B7280),
+                                  color: selected
+                                      ? Colors.white
+                                      : const Color(0xFF6B7280),
                                 ),
                               ),
                             ),
@@ -239,13 +293,18 @@ class _ParentScreenState extends State<ParentScreen> {
                       if (weeklyError != null)
                         Padding(
                           padding: const EdgeInsets.only(top: 6),
-                          child: Text(weeklyError!,
-                              style: const TextStyle(color: _red, fontSize: 12)),
+                          child: Text(
+                            weeklyError!,
+                            style: const TextStyle(color: _red, fontSize: 12),
+                          ),
                         ),
                     ] else if (recurrenceType == 'monthly') ...[
                       Row(
                         children: [
-                          const Text('Day of month:', style: TextStyle(fontSize: 13)),
+                          const Text(
+                            'Day of month:',
+                            style: TextStyle(fontSize: 13),
+                          ),
                           const Spacer(),
                           IconButton(
                             icon: const Icon(Icons.remove_circle_outline),
@@ -288,10 +347,16 @@ class _ParentScreenState extends State<ParentScreen> {
                       children: const [
                         Icon(Icons.repeat_rounded, size: 16),
                         SizedBox(width: 6),
-                        Text('Repeating chores', style: TextStyle(fontSize: 13)),
+                        Text(
+                          'Repeating chores',
+                          style: TextStyle(fontSize: 13),
+                        ),
                         Spacer(),
                         Chip(
-                          label: Text('Premium', style: TextStyle(fontSize: 11)),
+                          label: Text(
+                            'Premium',
+                            style: TextStyle(fontSize: 11),
+                          ),
                           padding: EdgeInsets.zero,
                         ),
                       ],
@@ -315,29 +380,36 @@ class _ParentScreenState extends State<ParentScreen> {
                   setDialogState(() => weeklyError = 'Select at least one day');
                   return;
                 }
-                await _db
+                final choresRef = _db
                     .collection('households')
                     .doc(householdId)
-                    .collection('chores')
-                    .add({
+                    .collection('chores');
+                final fields = {
                   'title': titleController.text.trim(),
                   'description': descriptionController.text.trim(),
                   'points': points,
-                  'status': 'pending',
                   'assignedTo': assignedTo,
                   'isRecurring': isRecurring,
                   'recurrenceType': isRecurring ? recurrenceType : null,
                   'recurrenceDays': isRecurring
                       ? (recurrenceType == 'monthly'
-                          ? [monthlyDay]
-                          : List<int>.from(recurrenceDays))
+                            ? [monthlyDay]
+                            : List<int>.from(recurrenceDays))
                       : null,
-                  'nextDueAt': null,
-                  'createdAt': FieldValue.serverTimestamp(),
-                });
+                };
+                if (isEditing) {
+                  await choresRef.doc(choreId).update(fields);
+                } else {
+                  await choresRef.add({
+                    ...fields,
+                    'status': 'pending',
+                    'nextDueAt': null,
+                    'createdAt': FieldValue.serverTimestamp(),
+                  });
+                }
                 if (mounted) Navigator.pop(context);
               },
-              child: const Text('Add'),
+              child: Text(isEditing ? 'Save' : 'Add'),
             ),
           ],
         ),
@@ -345,14 +417,21 @@ class _ParentScreenState extends State<ParentScreen> {
     );
   }
 
-  void _showAddRewardDialog(String householdId) {
-    final titleController = TextEditingController();
-    int pointCost = 20;
+  void _showRewardDialog(
+    String householdId, {
+    String? rewardId,
+    Map<String, dynamic>? existing,
+  }) {
+    final isEditing = rewardId != null;
+    final titleController = TextEditingController(
+      text: existing?['title'] as String? ?? '',
+    );
+    int pointCost = existing?['pointCost'] as int? ?? 20;
     showDialog(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Add Reward'),
+          title: Text(isEditing ? 'Edit Reward' : 'Add Reward'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -393,14 +472,23 @@ class _ParentScreenState extends State<ParentScreen> {
             ElevatedButton(
               onPressed: () async {
                 if (titleController.text.trim().isEmpty) return;
-                await _rewardService.addReward(
-                  householdId,
-                  titleController.text.trim(),
-                  pointCost,
-                );
+                if (isEditing) {
+                  await _rewardService.updateReward(
+                    householdId,
+                    rewardId,
+                    titleController.text.trim(),
+                    pointCost,
+                  );
+                } else {
+                  await _rewardService.addReward(
+                    householdId,
+                    titleController.text.trim(),
+                    pointCost,
+                  );
+                }
                 if (mounted) Navigator.pop(context);
               },
-              child: const Text('Add'),
+              child: Text(isEditing ? 'Save' : 'Add'),
             ),
           ],
         ),
@@ -408,8 +496,12 @@ class _ParentScreenState extends State<ParentScreen> {
     );
   }
 
-  void _reviewProof(BuildContext context, String choreId, Map<String, dynamic> chore) {
-    final householdId = (_userData!['householdIds'] as List).first;
+  void _reviewProof(
+    BuildContext context,
+    String choreId,
+    Map<String, dynamic> chore,
+  ) {
+    final householdId = resolveActiveHouseholdId(_userData!);
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -476,7 +568,9 @@ class _ParentScreenState extends State<ParentScreen> {
 
   String _choreSubtitle(Map<String, dynamic> chore, String status) {
     final assignedTo = chore['assignedTo'] as String?;
-    final namePrefix = assignedTo != null ? 'For ${_childNames[assignedTo] ?? 'child'} — ' : '';
+    final namePrefix = assignedTo != null
+        ? 'For ${_childNames[assignedTo] ?? 'child'} — '
+        : '';
     final isRecurring = chore['isRecurring'] == true;
 
     final nextDueRaw = chore['nextDueAt'];
@@ -492,9 +586,9 @@ class _ParentScreenState extends State<ParentScreen> {
     final recurringPrefix = isRecurring ? '↻ ' : '';
     return switch (status) {
       'submitted' => '${namePrefix}Tap to review proof',
-      'approved'  => 'Approved ✓',
-      'rejected'  => 'Rejected',
-      _           => '$recurringPrefix${namePrefix}Waiting for completion',
+      'approved' => 'Approved ✓',
+      'rejected' => 'Rejected',
+      _ => '$recurringPrefix${namePrefix}Waiting for completion',
     };
   }
 
@@ -506,19 +600,33 @@ class _ParentScreenState extends State<ParentScreen> {
     if (dateOnly == today) return 'today';
     if (dateOnly == tomorrow) return 'tomorrow';
     const weekDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
     return '${weekDays[date.weekday - 1]} ${date.day} ${months[date.month - 1]}';
   }
 
   String _recurrenceSummary(String type, List<int> days, int monthlyDay) {
     const weekDayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     return switch (type) {
-      'daily'   => 'Every day',
-      'weekly'  => days.isEmpty
-          ? 'Pick days below'
-          : 'Every ${days.map((d) => weekDayNames[d]).join(', ')}',
+      'daily' => 'Every day',
+      'weekly' =>
+        days.isEmpty
+            ? 'Pick days below'
+            : 'Every ${days.map((d) => weekDayNames[d]).join(', ')}',
       'monthly' => 'On the ${_ordinal(monthlyDay)} of each month',
-      _         => '',
+      _ => '',
     };
   }
 
@@ -561,8 +669,10 @@ class _ParentScreenState extends State<ParentScreen> {
                   ),
                 ),
                 const SizedBox(height: 4),
-                Text('Tap + to add your first chore.',
-                    style: TextStyle(color: Colors.grey[400])),
+                Text(
+                  'Tap + to add your first chore.',
+                  style: TextStyle(color: Colors.grey[400]),
+                ),
               ],
             ),
           );
@@ -576,10 +686,12 @@ class _ParentScreenState extends State<ParentScreen> {
             final status = chore['status'] as String? ?? 'pending';
             final isRecurring = chore['isRecurring'] == true;
             final nextDueRaw = chore['nextDueAt'];
-            final nextDueAt =
-                nextDueRaw != null ? (nextDueRaw as Timestamp).toDate() : null;
+            final nextDueAt = nextDueRaw != null
+                ? (nextDueRaw as Timestamp).toDate()
+                : null;
             final now = DateTime.now();
-            final isScheduled = nextDueAt != null &&
+            final isScheduled =
+                nextDueAt != null &&
                 nextDueAt.isAfter(DateTime(now.year, now.month, now.day));
             final sc = isScheduled
                 ? const Color(0xFFD1D5DB)
@@ -604,7 +716,8 @@ class _ParentScreenState extends State<ParentScreen> {
                     builder: (ctx) => AlertDialog(
                       title: const Text('Delete Chore?'),
                       content: const Text(
-                          'This chore has pending proof. Deleting it will discard the submission.'),
+                        'This chore has pending proof. Deleting it will discard the submission.',
+                      ),
                       actions: [
                         TextButton(
                           onPressed: () => Navigator.pop(ctx, false),
@@ -613,7 +726,9 @@ class _ParentScreenState extends State<ParentScreen> {
                         ElevatedButton(
                           onPressed: () => Navigator.pop(ctx, true),
                           style: ElevatedButton.styleFrom(
-                              backgroundColor: _red, foregroundColor: Colors.white),
+                            backgroundColor: _red,
+                            foregroundColor: Colors.white,
+                          ),
                           child: const Text('Delete'),
                         ),
                       ],
@@ -639,14 +754,19 @@ class _ParentScreenState extends State<ParentScreen> {
                         child: InkWell(
                           onTap: status == 'submitted'
                               ? () => _reviewProof(context, choreId, chore)
-                              : null,
+                              : () => _showChoreDialog(
+                                  householdId,
+                                  choreId: choreId,
+                                  existing: chore,
+                                ),
                           child: Padding(
                             padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
                             child: Row(
                               children: [
                                 Expanded(
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       Row(
                                         children: [
@@ -664,7 +784,9 @@ class _ParentScreenState extends State<ParentScreen> {
                                           ),
                                           if (isRecurring)
                                             Padding(
-                                              padding: const EdgeInsets.only(left: 4),
+                                              padding: const EdgeInsets.only(
+                                                left: 4,
+                                              ),
                                               child: Icon(
                                                 Icons.repeat_rounded,
                                                 size: 14,
@@ -692,7 +814,9 @@ class _ParentScreenState extends State<ParentScreen> {
                                 const SizedBox(width: 8),
                                 Container(
                                   padding: const EdgeInsets.symmetric(
-                                      horizontal: 10, vertical: 5),
+                                    horizontal: 10,
+                                    vertical: 5,
+                                  ),
                                   decoration: BoxDecoration(
                                     color: const Color(0xFFFFFBEB),
                                     borderRadius: BorderRadius.circular(20),
@@ -738,7 +862,11 @@ class _ParentScreenState extends State<ParentScreen> {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.card_giftcard_rounded, size: 56, color: Colors.grey[300]),
+                      Icon(
+                        Icons.card_giftcard_rounded,
+                        size: 56,
+                        color: Colors.grey[300],
+                      ),
                       const SizedBox(height: 12),
                       Text(
                         'No rewards yet!',
@@ -749,8 +877,10 @@ class _ParentScreenState extends State<ParentScreen> {
                         ),
                       ),
                       const SizedBox(height: 4),
-                      Text('Tap + to add a reward.',
-                          style: TextStyle(color: Colors.grey[400])),
+                      Text(
+                        'Tap + to add a reward.',
+                        style: TextStyle(color: Colors.grey[400]),
+                      ),
                     ],
                   ),
                 );
@@ -765,14 +895,20 @@ class _ParentScreenState extends State<ParentScreen> {
                     key: Key(rewardId),
                     direction: DismissDirection.endToStart,
                     background: Container(
-                      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                      margin: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 5,
+                      ),
                       decoration: BoxDecoration(
                         color: _red,
                         borderRadius: BorderRadius.circular(16),
                       ),
                       alignment: Alignment.centerRight,
                       padding: const EdgeInsets.symmetric(horizontal: 20),
-                      child: const Icon(Icons.delete_rounded, color: Colors.white),
+                      child: const Icon(
+                        Icons.delete_rounded,
+                        color: Colors.white,
+                      ),
                     ),
                     onDismissed: (_) => _db
                         .collection('households')
@@ -781,47 +917,64 @@ class _ParentScreenState extends State<ParentScreen> {
                         .doc(rewardId)
                         .delete(),
                     child: Card(
-                      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-                        child: Row(
-                          children: [
-                            Container(
-                              width: 42,
-                              height: 42,
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFFFFBEB),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: const Icon(Icons.star_rounded, color: _amber, size: 24),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Text(
-                                reward['title'],
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 15,
+                      margin: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 5,
+                      ),
+                      clipBehavior: Clip.antiAlias,
+                      child: InkWell(
+                        onTap: () => _showRewardDialog(
+                          householdId,
+                          rewardId: rewardId,
+                          existing: reward,
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 42,
+                                height: 42,
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFFFFBEB),
+                                  borderRadius: BorderRadius.circular(12),
                                 ),
-                              ),
-                            ),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 10, vertical: 5),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFFFFBEB),
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                              child: Text(
-                                '${reward['pointCost']} pts',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: 12,
+                                child: const Icon(
+                                  Icons.star_rounded,
                                   color: _amber,
+                                  size: 24,
                                 ),
                               ),
-                            ),
-                          ],
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  reward['title'],
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 15,
+                                  ),
+                                ),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 5,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFFFFBEB),
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: Text(
+                                  '${reward['pointCost']} pts',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 12,
+                                    color: _amber,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ),
@@ -840,7 +993,10 @@ class _ParentScreenState extends State<ParentScreen> {
               const SizedBox(width: 6),
               Text(
                 'Redemption requests',
-                style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey[700]),
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  color: Colors.grey[700],
+                ),
               ),
             ],
           ),
@@ -890,7 +1046,10 @@ class _ParentScreenState extends State<ParentScreen> {
                     ),
                     title: Text(
                       redemption['rewardTitle'],
-                      style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                      ),
                     ),
                     subtitle: Text(
                       'By ${redemption['redeemedByName']}',
@@ -908,11 +1067,16 @@ class _ParentScreenState extends State<ParentScreen> {
                             },
                             style: ElevatedButton.styleFrom(
                               padding: const EdgeInsets.symmetric(
-                                  horizontal: 12, vertical: 6),
+                                horizontal: 12,
+                                vertical: 6,
+                              ),
                               minimumSize: Size.zero,
                               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                             ),
-                            child: const Text('Done', style: TextStyle(fontSize: 12)),
+                            child: const Text(
+                              'Done',
+                              style: TextStyle(fontSize: 12),
+                            ),
                           )
                         : const Icon(Icons.check_circle_rounded, color: _green),
                   );
@@ -931,7 +1095,7 @@ class _ParentScreenState extends State<ParentScreen> {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
-    final householdId = (_userData!['householdIds'] as List).first;
+    final householdId = resolveActiveHouseholdId(_userData!);
 
     return Scaffold(
       appBar: AppBar(
@@ -947,10 +1111,14 @@ class _ParentScreenState extends State<ParentScreen> {
           IconButton(
             icon: const Icon(Icons.person_outline_rounded),
             tooltip: 'Profile',
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const ProfileScreen()),
-            ),
+            onPressed: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ProfileScreen()),
+              );
+              // Picks up a household switch made on the Profile screen.
+              if (mounted) _loadData();
+            },
           ),
           IconButton(
             icon: const Icon(Icons.logout_rounded),
@@ -969,8 +1137,8 @@ class _ParentScreenState extends State<ParentScreen> {
           : _buildRewardsTab(householdId),
       floatingActionButton: FloatingActionButton(
         onPressed: _currentTab == 0
-            ? () => _showAddChoreDialog(householdId)
-            : () => _showAddRewardDialog(householdId),
+            ? () => _showChoreDialog(householdId)
+            : () => _showRewardDialog(householdId),
         child: const Icon(Icons.add_rounded),
       ),
       bottomNavigationBar: BottomNavigationBar(

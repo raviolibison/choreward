@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'family_service.dart';
+import 'paywall_screen.dart';
 
 const _forest = Color(0xFF2D6A4F);
 const _deepForest = Color(0xFF1B4332);
@@ -31,6 +33,8 @@ class ProfileScreen extends StatelessWidget {
           final role = user['role'] as String? ?? 'child';
           final name = user['name'] as String? ?? '';
           final email = user['email'] as String? ?? '';
+          final activeHouseholdId =
+              householdIds.isEmpty ? null : resolveActiveHouseholdId(user);
 
           return ListView(
             padding: const EdgeInsets.all(16),
@@ -49,7 +53,12 @@ class ProfileScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 8),
                 ...householdIds.map(
-                  (hid) => _HouseholdCard(householdId: hid, role: role),
+                  (hid) => _HouseholdCard(
+                    householdId: hid,
+                    role: role,
+                    isActive: hid == activeHouseholdId,
+                    showSwitcher: householdIds.length > 1,
+                  ),
                 ),
               ],
             ],
@@ -132,7 +141,14 @@ class _UserCard extends StatelessWidget {
 class _HouseholdCard extends StatefulWidget {
   final String householdId;
   final String role;
-  const _HouseholdCard({required this.householdId, required this.role});
+  final bool isActive;
+  final bool showSwitcher;
+  const _HouseholdCard({
+    required this.householdId,
+    required this.role,
+    required this.isActive,
+    required this.showSwitcher,
+  });
 
   @override
   State<_HouseholdCard> createState() => _HouseholdCardState();
@@ -222,6 +238,20 @@ class _HouseholdCardState extends State<_HouseholdCard> {
     }
   }
 
+  void _openPaywall(BuildContext context) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => PaywallScreen(householdId: widget.householdId)),
+    );
+  }
+
+  Future<void> _switchToHere() async {
+    final uid = _auth.currentUser!.uid;
+    await _db.collection('users').doc(uid).update({
+      'activeHouseholdId': widget.householdId,
+    });
+  }
+
   void _copy(String text) {
     Clipboard.setData(ClipboardData(text: text));
     ScaffoldMessenger.of(context).showSnackBar(
@@ -289,6 +319,30 @@ class _HouseholdCardState extends State<_HouseholdCard> {
                             ),
                           ),
                         ),
+                        if (widget.showSwitcher) ...[
+                          if (widget.isActive)
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFDCFCE7),
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: const Text(
+                                'Active',
+                                style: TextStyle(
+                                  color: _forest,
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            )
+                          else
+                            OutlinedButton(
+                              onPressed: _switchToHere,
+                              child: const Text('Switch to this'),
+                            ),
+                          const SizedBox(width: 8),
+                        ],
                         if (isParent)
                           isPremium
                               ? IconButton(
@@ -296,16 +350,19 @@ class _HouseholdCardState extends State<_HouseholdCard> {
                                   tooltip: 'Rename',
                                   onPressed: () => _rename(householdName),
                                 )
-                              : Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: const [
-                                    Icon(Icons.lock_outline, size: 14, color: Color(0xFF9CA3AF)),
-                                    SizedBox(width: 2),
-                                    Text(
-                                      'Rename',
-                                      style: TextStyle(fontSize: 11, color: Color(0xFF9CA3AF)),
-                                    ),
-                                  ],
+                              : GestureDetector(
+                                  onTap: () => _openPaywall(context),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: const [
+                                      Icon(Icons.lock_outline, size: 14, color: Color(0xFF9CA3AF)),
+                                      SizedBox(width: 2),
+                                      Text(
+                                        'Rename',
+                                        style: TextStyle(fontSize: 11, color: Color(0xFF9CA3AF)),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                       ],
                     ),
@@ -354,6 +411,17 @@ class _HouseholdCardState extends State<_HouseholdCard> {
                       _CodeRow(label: 'Child', code: childCode, onCopy: () => _copy(childCode)),
                       const SizedBox(height: 6),
                       _CodeRow(label: 'Co-parent', code: parentCode, onCopy: () => _copy(parentCode)),
+                      if (!isPremium) ...[
+                        const SizedBox(height: 16),
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            icon: const Icon(Icons.star_rounded),
+                            label: const Text('Upgrade to Premium'),
+                            onPressed: () => _openPaywall(context),
+                          ),
+                        ),
+                      ],
                     ],
 
                     const Divider(height: 28),
