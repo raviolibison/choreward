@@ -7,7 +7,7 @@ import 'package:purchases_flutter/purchases_flutter.dart';
 // TODO(billing): replace with real RevenueCat API keys once the RevenueCat
 // project and store listings exist. Get these from
 // https://app.revenuecat.com -> Project Settings -> API Keys.
-const _revenueCatAndroidApiKey = 'REVENUECAT_ANDROID_API_KEY_PLACEHOLDER';
+const _revenueCatAndroidApiKey = 'goog_qEgcuFDPoYTYKrAmTcFeYctOBKL';
 const _revenueCatIosApiKey = 'REVENUECAT_IOS_API_KEY_PLACEHOLDER';
 
 // The RevenueCat entitlement identifier that unlocks premium features.

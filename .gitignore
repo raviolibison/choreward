@@ -47,3 +47,9 @@ app.*.map.json
 # Firebase
 google-services.json
 GoogleService-Info.plist
+
+# Android release signing — never commit these
+/android/key.properties
+/android/upload-keystore.jks
+*.jks
+*.keystore
