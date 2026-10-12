@@ -1,7 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'dart:math';
 
 class PremiumLimitException implements Exception {
   final String message;
@@ -24,41 +23,18 @@ class FamilyService {
   final _db = FirebaseFirestore.instance;
   final _auth = FirebaseAuth.instance;
 
-  String _generateInviteCode() {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    final random = Random();
-    return List.generate(6, (index) => chars[random.nextInt(chars.length)]).join();
-  }
-
-  // Called when a parent creates a new household
+  // Server-side so a household can't be created with isPremium already set,
+  // and so invite codes are stored where only parents can read them — see
+  // createHousehold in functions/index.js.
   Future<Map<String, dynamic>> createHousehold(String familyName) async {
-    final user = _auth.currentUser!;
-    final householdInviteCode = _generateInviteCode();
-    final childInviteCode = _generateInviteCode();
-
-    final householdRef = await _db.collection('households').add({
-      'name': familyName,
-      'householdInviteCode': householdInviteCode,
-      'childInviteCode': childInviteCode,
-      'createdAt': FieldValue.serverTimestamp(),
-      'parentIds': [user.uid],
-      'childIds': [],
-      'isPremium': false,
-    });
-
-    // Create the user document
-    await _db.collection('users').doc(user.uid).set({
-      'name': user.displayName ?? 'Parent',
-      'email': user.email,
-      'role': 'parent',
-      'householdIds': [householdRef.id],
-    });
-
-    return {
-      'householdId': householdRef.id,
-      'householdInviteCode': householdInviteCode,
-      'childInviteCode': childInviteCode,
-    };
+    try {
+      final result = await FirebaseFunctions.instance
+          .httpsCallable('createHousehold')
+          .call({'name': familyName});
+      return Map<String, dynamic>.from(result.data as Map);
+    } on FirebaseFunctionsException catch (e) {
+      throw Exception(e.message ?? 'Could not create household');
+    }
   }
 
   // Joining a household requires proving possession of an invite code,
@@ -77,6 +53,12 @@ class FamilyService {
       }
       throw Exception(e.message ?? 'Invalid invite code');
     }
+  }
+
+  // Server-side, since it has to delete the Auth user and clean up other
+  // members' data — see deleteAccount in functions/index.js.
+  Future<void> deleteAccount() async {
+    await FirebaseFunctions.instance.httpsCallable('deleteAccount').call();
   }
 
   // Get current user data

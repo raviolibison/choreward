@@ -1,0 +1,11 @@
+// Static site for ravioli-studios.com (privacy policy and account-deletion
+// pages linked from Play Console). Deploy from this folder with:
+//   npx wrangler deploy
+// A deploy replaces every file on the site, so all pages must live in public/.
+{
+  "name": "ravioli-studios",
+  "compatibility_date": "2026-09-10",
+  "assets": { "directory": "./public" },
+  "workers_dev": true,
+  "routes": [{ "pattern": "ravioli-studios.com", "custom_domain": true }]
+}

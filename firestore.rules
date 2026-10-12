@@ -22,8 +22,16 @@ service cloud.firestore {
     // A parent in one of the target user's households may adjust that
     // user's `points` field only (chore-approval awards).
     match /users/{userId} {
-      allow read: if isAuth();
-      allow create, delete: if isAuth() && request.auth.uid == userId;
+      // Your own doc, or the doc of someone you share a household with.
+      allow read: if isAuth() && (
+        request.auth.uid == userId ||
+        resource.data.get('householdIds', []).hasAny(
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('householdIds', []))
+      );
+      // Server-only (createHousehold / joinHousehold / deleteAccount): if
+      // clients could create their own doc, they could delete and recreate it
+      // with any points value.
+      allow create, delete: if false;
 
       allow update: if isAuth() && request.auth.uid == userId && (
         !request.resource.data.diff(resource.data).affectedKeys().hasAny(['points']) ||
@@ -38,9 +46,13 @@ service cloud.firestore {
     }
 
     match /households/{householdId} {
-      // Broad read needed so invite-code lookups work before membership is established.
-      allow read: if isAuth();
-      allow create: if isAuth();
+      // Members only — invite-code lookups happen server-side in joinHousehold.
+      allow read: if isAuth() && (
+        request.auth.uid in resource.data.parentIds ||
+        request.auth.uid in resource.data.get('childIds', [])
+      );
+      // Server-only (createHousehold), so a household can't start out premium.
+      allow create: if false;
       allow delete: if isAuth() && isHouseholdParent(householdId);
       // Note: joining a household (adding your own UID to parentIds/childIds)
       // is NOT allowed here — it requires proving possession of an invite
@@ -48,8 +60,10 @@ service cloud.firestore {
       // `joinHousehold` callable Cloud Function, which uses the Admin SDK
       // and bypasses these rules.
       allow update: if isAuth() && (
-        // Existing parents can change anything.
-        isHouseholdParent(householdId) ||
+        // Parents can change anything except isPremium, which only the
+        // revenueCatWebhook function may set.
+        (isHouseholdParent(householdId) &&
+         !request.resource.data.diff(resource.data).affectedKeys().hasAny(['isPremium'])) ||
         // Self-service leave: remove only own UID from parentIds or childIds.
         (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['parentIds']) &&
          resource.data.parentIds.hasAll(request.resource.data.parentIds) &&
@@ -81,6 +95,17 @@ service cloud.firestore {
         allow update: if isAuth() && isHouseholdParent(householdId);
         allow delete: if false;
       }
+
+      // Invite codes, for parents to share. Written only by Cloud Functions.
+      match /private/{docId} {
+        allow read: if isAuth() && isHouseholdParent(householdId);
+        allow write: if false;
+      }
+    }
+
+    // Code -> household lookup used by joinHousehold. Server-only.
+    match /inviteCodes/{code} {
+      allow read, write: if false;
     }
   }
 }

@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'family_service.dart';
 import 'paywall_screen.dart';
 
@@ -61,10 +63,84 @@ class ProfileScreen extends StatelessWidget {
                   ),
                 ),
               ],
+              const SizedBox(height: 24),
+              const _DeleteAccountButton(),
             ],
           );
         },
       ),
+    );
+  }
+}
+
+class _DeleteAccountButton extends StatefulWidget {
+  const _DeleteAccountButton();
+
+  @override
+  State<_DeleteAccountButton> createState() => _DeleteAccountButtonState();
+}
+
+class _DeleteAccountButtonState extends State<_DeleteAccountButton> {
+  bool _isDeleting = false;
+
+  Future<void> _delete() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete account?'),
+        content: const Text(
+          'This permanently deletes your account and your data. If you are the '
+          'only parent in a household, that household is deleted for everyone '
+          'in it, including all chores, rewards and photos. This cannot be undone.\n\n'
+          'Deleting your account does not cancel a Premium subscription. Cancel '
+          'it in the Google Play Store first.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _red,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    // Captured up front: deleting the user doc rebuilds ProfileScreen without
+    // this widget, so `context` is gone by the time the call returns.
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _isDeleting = true);
+    try {
+      await FamilyService().deleteAccount();
+    } on FirebaseFunctionsException catch (e) {
+      if (mounted) setState(() => _isDeleting = false);
+      messenger.showSnackBar(
+        SnackBar(content: Text('Could not delete account: ${e.message}')),
+      );
+      return;
+    }
+    await FirebaseAuth.instance.signOut();
+    await GoogleSignIn().signOut();
+    navigator.popUntil((route) => route.isFirst);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isDeleting) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    return TextButton.icon(
+      icon: const Icon(Icons.delete_forever_rounded, color: _red),
+      label: const Text('Delete account', style: TextStyle(color: _red)),
+      onPressed: _delete,
     );
   }
 }
@@ -282,8 +358,6 @@ class _HouseholdCardState extends State<_HouseholdCard> {
         final isPremium = data['isPremium'] == true;
         final parentIds = List<String>.from(data['parentIds'] ?? []);
         final childIds = List<String>.from(data['childIds'] ?? []);
-        final childCode = data['childInviteCode'] as String? ?? '';
-        final parentCode = data['householdInviteCode'] as String? ?? '';
 
         return FutureBuilder<Map<String, String>>(
           future: _fetchNames([...parentIds, ...childIds]),
@@ -408,9 +482,27 @@ class _HouseholdCardState extends State<_HouseholdCard> {
                         ),
                       ),
                       const SizedBox(height: 10),
-                      _CodeRow(label: 'Child', code: childCode, onCopy: () => _copy(childCode)),
-                      const SizedBox(height: 6),
-                      _CodeRow(label: 'Co-parent', code: parentCode, onCopy: () => _copy(parentCode)),
+                      StreamBuilder<DocumentSnapshot>(
+                        stream: _db
+                            .collection('households')
+                            .doc(widget.householdId)
+                            .collection('private')
+                            .doc('invites')
+                            .snapshots(),
+                        builder: (context, invitesSnap) {
+                          final invites =
+                              invitesSnap.data?.data() as Map<String, dynamic>? ?? {};
+                          final childCode = invites['childInviteCode'] as String? ?? '';
+                          final parentCode = invites['householdInviteCode'] as String? ?? '';
+                          return Column(
+                            children: [
+                              _CodeRow(label: 'Child', code: childCode, onCopy: () => _copy(childCode)),
+                              const SizedBox(height: 6),
+                              _CodeRow(label: 'Co-parent', code: parentCode, onCopy: () => _copy(parentCode)),
+                            ],
+                          );
+                        },
+                      ),
                       if (!isPremium) ...[
                         const SizedBox(height: 16),
                         SizedBox(

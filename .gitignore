@@ -48,6 +48,9 @@ app.*.map.json
 google-services.json
 GoogleService-Info.plist
 
+# Wrangler local state
+/website/.wrangler/
+
 # Android release signing — never commit these
 /android/key.properties
 /android/upload-keystore.jks

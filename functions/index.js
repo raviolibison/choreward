@@ -2,8 +2,11 @@ const { onDocumentUpdated, onDocumentCreated } = require("firebase-functions/v2/
 const { onCall, onRequest, HttpsError } = require("firebase-functions/v2/https");
 const { defineSecret } = require("firebase-functions/params");
 const { initializeApp } = require("firebase-admin/app");
+const { getAuth } = require("firebase-admin/auth");
 const { getFirestore, Timestamp, FieldValue } = require("firebase-admin/firestore");
 const { getMessaging } = require("firebase-admin/messaging");
+const { getStorage } = require("firebase-admin/storage");
+const { randomInt } = require("crypto");
 
 initializeApp();
 
@@ -18,11 +21,83 @@ const PREMIUM_ENTITLEMENT_ID = "premium";
 // this webhook in the RevenueCat dashboard (Project Settings > Webhooks).
 const revenueCatWebhookSecret = defineSecret("REVENUECAT_WEBHOOK_SECRET");
 
+// Invite codes are stored server-only in inviteCodes/{code} -> {householdId,
+// role}, and shown to parents from households/{id}/private/invites. They
+// must never be on the household doc itself: every member can read that,
+// and a child holding the co-parent code could join as a parent.
+const INVITE_CODE_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+const INVITE_CODE_PATTERN = /^[A-Z0-9]{6}$/;
+
+function generateInviteCode() {
+  return Array.from({ length: 6 }, () => INVITE_CODE_CHARS[randomInt(INVITE_CODE_CHARS.length)]).join("");
+}
+
+async function pickUnusedInviteCode(tx, db, exclude) {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const code = generateInviteCode();
+    if (code === exclude) continue;
+    const snap = await tx.get(db.collection("inviteCodes").doc(code));
+    if (!snap.exists) return code;
+  }
+  throw new HttpsError("internal", "Could not generate an invite code. Please try again.");
+}
+
+// Server-side so clients can't create a household with isPremium already set,
+// or write invite codes anywhere members can read them.
+exports.createHousehold = onCall(async (request) => {
+  const uid = request.auth?.uid;
+  if (!uid) {
+    throw new HttpsError("unauthenticated", "You must be signed in.");
+  }
+
+  const name = String(request.data?.name ?? "").trim();
+  if (!name || name.length > 60) {
+    throw new HttpsError("invalid-argument", "Please enter a family name (max 60 characters).");
+  }
+
+  const db = getFirestore();
+  const householdRef = db.collection("households").doc();
+  const userRef = db.collection("users").doc(uid);
+
+  return db.runTransaction(async (tx) => {
+    const userSnap = await tx.get(userRef);
+    const childInviteCode = await pickUnusedInviteCode(tx, db);
+    const householdInviteCode = await pickUnusedInviteCode(tx, db, childInviteCode);
+
+    tx.set(householdRef, {
+      name,
+      createdAt: FieldValue.serverTimestamp(),
+      parentIds: [uid],
+      childIds: [],
+      isPremium: false,
+    });
+    tx.set(householdRef.collection("private").doc("invites"), { childInviteCode, householdInviteCode });
+    tx.set(db.collection("inviteCodes").doc(childInviteCode), { householdId: householdRef.id, role: "child" });
+    tx.set(db.collection("inviteCodes").doc(householdInviteCode), { householdId: householdRef.id, role: "parent" });
+
+    if (userSnap.exists) {
+      tx.update(userRef, {
+        householdIds: FieldValue.arrayUnion(householdRef.id),
+        activeHouseholdId: householdRef.id,
+        role: "parent",
+      });
+    } else {
+      tx.set(userRef, {
+        name: request.auth.token.name ?? "Parent",
+        email: request.auth.token.email ?? null,
+        role: "parent",
+        householdIds: [householdRef.id],
+      });
+    }
+
+    return { householdId: householdRef.id, childInviteCode, householdInviteCode };
+  });
+});
+
 // Joining a household requires proving possession of an invite code, which
-// can only be verified server-side (Firestore rules can't validate a code
-// that isn't part of the document being written). This runs with Admin
-// privileges and is the only way to add yourself to a household's
-// parentIds/childIds — see firestore.rules.
+// can only be verified server-side. This runs with Admin privileges and is
+// the only way to add yourself to a household's parentIds/childIds — see
+// firestore.rules.
 exports.joinHousehold = onCall(async (request) => {
   const uid = request.auth?.uid;
   if (!uid) {
@@ -30,24 +105,18 @@ exports.joinHousehold = onCall(async (request) => {
   }
 
   const code = String(request.data?.inviteCode ?? "").trim().toUpperCase();
-  if (!code) {
-    throw new HttpsError("invalid-argument", "An invite code is required.");
-  }
-
-  const db = getFirestore();
-  const householdsRef = db.collection("households");
-
-  let snap = await householdsRef.where("childInviteCode", "==", code).limit(1).get();
-  let role = "child";
-  if (snap.empty) {
-    snap = await householdsRef.where("householdInviteCode", "==", code).limit(1).get();
-    role = "parent";
-  }
-  if (snap.empty) {
+  if (!INVITE_CODE_PATTERN.test(code)) {
     throw new HttpsError("not-found", "Invalid invite code.");
   }
 
-  const householdRef = snap.docs[0].ref;
+  const db = getFirestore();
+  const codeSnap = await db.collection("inviteCodes").doc(code).get();
+  if (!codeSnap.exists) {
+    throw new HttpsError("not-found", "Invalid invite code.");
+  }
+
+  const { householdId, role } = codeSnap.data();
+  const householdRef = db.collection("households").doc(householdId);
   const userRef = db.collection("users").doc(uid);
 
   return db.runTransaction(async (tx) => {
@@ -162,6 +231,106 @@ exports.revenueCatWebhook = onRequest(
     res.status(200).send("OK");
   }
 );
+
+// In-app account deletion (required by Google Play for apps with accounts).
+// Households the caller is the last parent of are deleted outright, for
+// every member; in households that live on, the caller's membership, chore
+// proof photos, and name on chores/redemptions are removed. Does not cancel a
+// Google Play subscription — that has to be done in the Play Store.
+exports.deleteAccount = onCall(async (request) => {
+  const uid = request.auth?.uid;
+  if (!uid) {
+    throw new HttpsError("unauthenticated", "You must be signed in.");
+  }
+
+  const db = getFirestore();
+  const userRef = db.collection("users").doc(uid);
+  const userSnap = await userRef.get();
+  const householdIds = userSnap.data()?.householdIds ?? [];
+
+  for (const householdId of householdIds) {
+    const householdRef = db.collection("households").doc(householdId);
+    const householdSnap = await householdRef.get();
+    const household = householdSnap.data();
+    if (!household) continue;
+
+    const remainingParents = (household.parentIds ?? []).filter((id) => id !== uid);
+    if (remainingParents.length === 0) {
+      await deleteHousehold(db, householdRef, household);
+    } else {
+      await removeMemberFromHousehold(db, householdRef, uid);
+    }
+  }
+
+  await userRef.delete();
+  await getAuth().deleteUser(uid);
+  return { deleted: true };
+});
+
+async function deleteHousehold(db, householdRef, household) {
+  const memberRefs = [...(household.parentIds ?? []), ...(household.childIds ?? [])]
+    .map((id) => db.collection("users").doc(id));
+  const memberSnaps = memberRefs.length > 0 ? await db.getAll(...memberRefs) : [];
+  const invitesSnap = await householdRef.collection("private").doc("invites").get();
+  const invites = invitesSnap.data() ?? {};
+
+  const batch = db.batch();
+  for (const snap of memberSnaps) {
+    if (snap.exists) {
+      batch.update(snap.ref, { householdIds: FieldValue.arrayRemove(householdRef.id) });
+    }
+  }
+  for (const code of [invites.childInviteCode, invites.householdInviteCode]) {
+    if (code) batch.delete(db.collection("inviteCodes").doc(code));
+  }
+  await batch.commit();
+
+  await db.recursiveDelete(householdRef);
+  await getStorage().bucket().deleteFiles({ prefix: `proof/${householdRef.id}/` });
+}
+
+async function removeMemberFromHousehold(db, householdRef, uid) {
+  const [choresSnap, redemptionsSnap] = await Promise.all([
+    householdRef.collection("chores").where("submittedBy", "==", uid).get(),
+    householdRef.collection("redemptions").where("redeemedBy", "==", uid).get(),
+  ]);
+
+  const bucket = getStorage().bucket();
+  await Promise.all(
+    choresSnap.docs
+      .map((doc) => storagePathFromDownloadUrl(doc.data().proofUrl))
+      .filter(Boolean)
+      .map((path) => bucket.file(path).delete({ ignoreNotFound: true }))
+  );
+
+  const batch = db.batch();
+  batch.update(householdRef, {
+    parentIds: FieldValue.arrayRemove(uid),
+    childIds: FieldValue.arrayRemove(uid),
+  });
+  for (const doc of choresSnap.docs) {
+    const chore = doc.data();
+    batch.update(doc.ref, {
+      proofUrl: null,
+      submittedBy: null,
+      submittedByName: null,
+      submittedAt: null,
+      // A submission awaiting review can't be approved without its submitter.
+      ...(chore.status === "submitted" ? { status: "pending" } : {}),
+    });
+  }
+  for (const doc of redemptionsSnap.docs) {
+    batch.update(doc.ref, { redeemedBy: null, redeemedByName: "Deleted user" });
+  }
+  await batch.commit();
+}
+
+// Firebase Storage download URLs look like
+// https://firebasestorage.googleapis.com/v0/b/<bucket>/o/<url-encoded path>?alt=media&token=...
+function storagePathFromDownloadUrl(url) {
+  const match = typeof url === "string" ? url.match(/\/o\/([^?]+)/) : null;
+  return match ? decodeURIComponent(match[1]) : null;
+}
 
 exports.onChoreUpdated = onDocumentUpdated(
   "households/{householdId}/chores/{choreId}",
