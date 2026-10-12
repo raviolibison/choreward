@@ -42,6 +42,7 @@ class _ParentScreenState extends State<ParentScreen> {
     super.initState();
     _loadData();
     MessagingService.initialize();
+    _familyService.syncDisplayName();
   }
 
   Future<void> _loadData() async {

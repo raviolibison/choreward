@@ -58,6 +58,7 @@ exports.createHousehold = onCall(async (request) => {
   const db = getFirestore();
   const householdRef = db.collection("households").doc();
   const userRef = db.collection("users").doc(uid);
+  const account = await getAuth().getUser(uid);
 
   return db.runTransaction(async (tx) => {
     const userSnap = await tx.get(userRef);
@@ -83,8 +84,8 @@ exports.createHousehold = onCall(async (request) => {
       });
     } else {
       tx.set(userRef, {
-        name: request.auth.token.name ?? "Parent",
-        email: request.auth.token.email ?? null,
+        name: account.displayName || "Parent",
+        email: account.email ?? null,
         role: "parent",
         householdIds: [householdRef.id],
       });
@@ -118,6 +119,7 @@ exports.joinHousehold = onCall(async (request) => {
   const { householdId, role } = codeSnap.data();
   const householdRef = db.collection("households").doc(householdId);
   const userRef = db.collection("users").doc(uid);
+  const account = await getAuth().getUser(uid);
 
   return db.runTransaction(async (tx) => {
     const [householdSnap, userSnap] = await Promise.all([
@@ -154,8 +156,8 @@ exports.joinHousehold = onCall(async (request) => {
       tx.update(userRef, userUpdate);
     } else {
       tx.set(userRef, {
-        name: request.auth.token.name ?? (role === "child" ? "Child" : "Parent"),
-        email: request.auth.token.email ?? null,
+        name: account.displayName || (role === "child" ? "Child" : "Parent"),
+        email: account.email ?? null,
         role,
         householdIds: [householdRef.id],
         ...(role === "child" ? { points: 0 } : {}),

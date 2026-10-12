@@ -34,6 +34,7 @@ class _ChildScreenState extends State<ChildScreen> {
   void initState() {
     super.initState();
     MessagingService.initialize();
+    FamilyService().syncDisplayName();
   }
 
   Future<void> _submitProof(

@@ -61,6 +61,19 @@ class FamilyService {
     await FirebaseFunctions.instance.httpsCallable('deleteAccount').call();
   }
 
+  // The account's display name is the source of truth; keeps the user doc's
+  // name, which other household members see, in step with it.
+  Future<void> syncDisplayName() async {
+    final user = _auth.currentUser;
+    final name = user?.displayName?.trim();
+    if (user == null || name == null || name.isEmpty) return;
+    final ref = _db.collection('users').doc(user.uid);
+    final doc = await ref.get();
+    if (doc.exists && doc.data()?['name'] != name) {
+      await ref.update({'name': name});
+    }
+  }
+
   // Get current user data
   Future<Map<String, dynamic>?> getUserData() async {
     final user = _auth.currentUser!;
