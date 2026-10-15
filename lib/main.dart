@@ -18,7 +18,11 @@ void main() async {
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  const MyApp({super.key, this.auth, this.firestore});
+
+  // Injectable for tests; default to the real Firebase instances.
+  final FirebaseAuth? auth;
+  final FirebaseFirestore? firestore;
 
   @override
   Widget build(BuildContext context) {
@@ -113,7 +117,7 @@ class MyApp extends StatelessWidget {
         ),
       ),
       home: StreamBuilder(
-        stream: FirebaseAuth.instance.authStateChanges(),
+        stream: (auth ?? FirebaseAuth.instance).authStateChanges(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Scaffold(
@@ -121,7 +125,7 @@ class MyApp extends StatelessWidget {
             );
           }
           if (snapshot.hasData) {
-            return const RoleRouter();
+            return RoleRouter(auth: auth, firestore: firestore);
           }
           return const LoginScreen();
         },
@@ -131,20 +135,24 @@ class MyApp extends StatelessWidget {
 }
 
 class RoleRouter extends StatelessWidget {
-  const RoleRouter({super.key});
+  const RoleRouter({super.key, this.auth, this.firestore});
+
+  final FirebaseAuth? auth;
+  final FirebaseFirestore? firestore;
 
   @override
   Widget build(BuildContext context) {
-    final user = FirebaseAuth.instance.currentUser;
+    final auth = this.auth ?? FirebaseAuth.instance;
+    final user = auth.currentUser;
     if (user == null) return const LoginScreen();
 
     return StreamBuilder<DocumentSnapshot>(
-      stream: FirebaseFirestore.instance
+      stream: (firestore ?? FirebaseFirestore.instance)
           .collection('users')
           .doc(user.uid)
           .snapshots(),
       builder: (context, snapshot) {
-        if (FirebaseAuth.instance.currentUser == null) {
+        if (auth.currentUser == null) {
           return const LoginScreen();
         }
 

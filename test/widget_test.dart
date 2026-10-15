@@ -1,30 +1,48 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
-import 'package:flutter/material.dart';
-import 'package:flutter_test/flutter_test.dart';
-
+// Smoke tests for app startup routing: auth state -> Login / Setup / role screen.
+import 'package:chore_app/login_screen.dart';
 import 'package:chore_app/main.dart';
+import 'package:chore_app/setup_screen.dart';
+import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
+import 'package:firebase_auth_mocks/firebase_auth_mocks.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_core_platform_interface/test.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  setUpAll(() async {
+    // Screens construct services that touch Firebase singletons, so a
+    // (mocked) default app must exist even though the tests inject fakes.
+    TestWidgetsFlutterBinding.ensureInitialized();
+    setupFirebaseCoreMocks();
+    await Firebase.initializeApp();
+    // Don't hit the network for fonts; fall back to the default font.
+    GoogleFonts.config.allowRuntimeFetching = false;
+  });
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+  testWidgets('signed-out user sees the login screen', (tester) async {
+    await tester.pumpWidget(MyApp(
+      auth: MockFirebaseAuth(),
+      firestore: FakeFirebaseFirestore(),
+    ));
+    await tester.pumpAndSettle();
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+    expect(find.byType(LoginScreen), findsOneWidget);
+    expect(find.text('Sign in with Google'), findsOneWidget);
+  });
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+  testWidgets('signed-in user without a household sees setup', (tester) async {
+    final auth = MockFirebaseAuth(
+      signedIn: true,
+      mockUser: MockUser(uid: 'u1', email: 'parent@example.com'),
+    );
+    await tester.pumpWidget(MyApp(
+      auth: auth,
+      firestore: FakeFirebaseFirestore(),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(SetupScreen), findsOneWidget);
+    expect(find.byType(LoginScreen), findsNothing);
   });
 }
